@@ -38,4 +38,6 @@
 	"settings.enableCodeActions.description": "Enable Roo Code quick fixes",
 	"settings.autoImportSettingsPath.description": "Path to a RooCode configuration file to automatically import on extension startup. Supports absolute paths and paths relative to the home directory (e.g. '~/Documents/roo-code-settings.json'). Leave empty to disable auto-import.",
 	"settings.useAgentRules.description": "Enable loading of AGENTS.md files for agent-specific rules (see https://agent-rules.org/)"
+,
+	"settings.customCondensationPrompt.description": "Custom prompt for automatic context condensation"
 }

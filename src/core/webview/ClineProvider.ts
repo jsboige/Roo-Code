@@ -9,6 +9,8 @@ import axios from "axios"
 import pWaitFor from "p-wait-for"
 import * as vscode from "vscode"
 
+import { FileLogger } from "../logging/FileLogger"
+
 import {
 	type TaskProviderLike,
 	type TaskProviderEvents,
@@ -112,6 +114,7 @@ export class ClineProvider
 	protected mcpHub?: McpHub // Change from private to protected
 	private marketplaceManager: MarketplaceManager
 	private mdmService?: MdmService
+	private fileLogger: FileLogger
 
 	public isViewLaunched = false
 	public settingsImportedAt?: number
@@ -130,6 +133,15 @@ export class ClineProvider
 
 		this.log("ClineProvider instantiated")
 		ClineProvider.activeInstances.add(this)
+
+		// Initialize FileLogger for persistent debugging
+		this.fileLogger = new FileLogger(path.join(getWorkspacePath(), 'roo-code'))
+		// Log instantiation with diagnostic markers
+		this.fileLogger.info('WEBVIEW_LIFECYCLE', 'ClineProvider instantiated', {
+			renderContext: this.renderContext,
+			extensionPath: context.extensionPath,
+			timestamp: new Date().toISOString()
+		}).catch(error => console.error('[DIAGNOSTIC-DISPOSE] FileLogger error:', error))
 
 		this.mdmService = mdmService
 		this.updateGlobalState("codebaseIndexModels", EMBEDDING_MODEL_PROFILES)
@@ -343,16 +355,36 @@ export class ClineProvider
 	- https://github.com/microsoft/vscode-extension-samples/blob/main/webview-sample/src/extension.ts
 	*/
 	private clearWebviewResources() {
+		this.fileLogger.info('WEBVIEW_LIFECYCLE', '[DIAGNOSTIC-DISPOSE] Starting clearWebviewResources', {
+			webviewDisposablesCount: this.webviewDisposables.length,
+			timestamp: new Date().toISOString()
+		}).catch(error => console.error('[DIAGNOSTIC-DISPOSE] FileLogger error:', error))
+
+		let disposedCount = 0
 		while (this.webviewDisposables.length) {
 			const x = this.webviewDisposables.pop()
 			if (x) {
 				x.dispose()
+				disposedCount++
 			}
 		}
+
+		this.fileLogger.info('WEBVIEW_LIFECYCLE', '[DIAGNOSTIC-DISPOSE] clearWebviewResources completed', {
+			disposedCount,
+			remainingDisposables: this.webviewDisposables.length,
+			timestamp: new Date().toISOString()
+		}).catch(error => console.error('[DIAGNOSTIC-DISPOSE] FileLogger error:', error))
 	}
 
 	async dispose() {
 		this.log("Disposing ClineProvider...")
+		
+		await this.fileLogger.info('WEBVIEW_LIFECYCLE', '[DIAGNOSTIC-DISPOSE] Starting ClineProvider dispose', {
+			clineStackLength: this.clineStack.length,
+			viewExists: !!this.view,
+			viewType: this.view ? ('onDidChangeViewState' in this.view ? 'tab' : 'sidebar') : 'none',
+			timestamp: new Date().toISOString()
+		}).catch(error => console.error('[DIAGNOSTIC-DISPOSE] FileLogger error:', error))
 
 		// Clear all tasks from the stack.
 		while (this.clineStack.length > 0) {
@@ -360,10 +392,14 @@ export class ClineProvider
 		}
 
 		this.log("Cleared all tasks")
+		await this.fileLogger.info('WEBVIEW_LIFECYCLE', '[DIAGNOSTIC-DISPOSE] Cleared all tasks from stack')
+			.catch(error => console.error('[DIAGNOSTIC-DISPOSE] FileLogger error:', error))
 
 		if (this.view && "dispose" in this.view) {
 			this.view.dispose()
 			this.log("Disposed webview")
+			await this.fileLogger.info('WEBVIEW_LIFECYCLE', '[DIAGNOSTIC-DISPOSE] Disposed webview view')
+				.catch(error => console.error('[DIAGNOSTIC-DISPOSE] FileLogger error:', error))
 		}
 
 		this.clearWebviewResources()
@@ -373,11 +409,13 @@ export class ClineProvider
 			CloudService.instance.off("settings-updated", this.handleCloudSettingsUpdate)
 		}
 
+		let mainDisposablesCount = 0
 		while (this.disposables.length) {
 			const x = this.disposables.pop()
 
 			if (x) {
 				x.dispose()
+				mainDisposablesCount++
 			}
 		}
 
@@ -388,12 +426,24 @@ export class ClineProvider
 		this.marketplaceManager?.cleanup()
 		this.customModesManager?.dispose()
 		this.log("Disposed all disposables")
+		
+		await this.fileLogger.info('WEBVIEW_LIFECYCLE', '[DIAGNOSTIC-DISPOSE] Disposed main resources', {
+			mainDisposablesCount,
+			timestamp: new Date().toISOString()
+		}).catch(error => console.error('[DIAGNOSTIC-DISPOSE] FileLogger error:', error))
+
 		ClineProvider.activeInstances.delete(this)
 
 		// Clean up any event listeners attached to this provider
 		this.removeAllListeners()
 
 		McpServerManager.unregisterProvider(this)
+
+		// Dispose FileLogger last
+		await this.fileLogger.info('WEBVIEW_LIFECYCLE', '[DIAGNOSTIC-DISPOSE] ClineProvider dispose completed')
+			.catch(error => console.error('[DIAGNOSTIC-DISPOSE] FileLogger error:', error))
+		await this.fileLogger.dispose().catch(error =>
+			console.error('[DIAGNOSTIC-DISPOSE] FileLogger disposal error:', error))
 	}
 
 	public static getVisibleInstance(): ClineProvider | undefined {
@@ -497,10 +547,17 @@ export class ClineProvider
 	async resolveWebviewView(webviewView: vscode.WebviewView | vscode.WebviewPanel) {
 		this.log("Resolving webview view")
 
+		// Log webview creation with diagnostic markers
+		const inTabMode = "onDidChangeViewState" in webviewView
+		await this.fileLogger.info('WEBVIEW_LIFECYCLE', '[DIAGNOSTIC-DISPOSE] Webview view created', {
+			mode: inTabMode ? 'tab' : 'sidebar',
+			renderContext: this.renderContext,
+			timestamp: new Date().toISOString()
+		}).catch(error => console.error('[DIAGNOSTIC-DISPOSE] FileLogger error:', error))
+
 		this.view = webviewView
 
 		// Set panel reference according to webview type
-		const inTabMode = "onDidChangeViewState" in webviewView
 		if (inTabMode) {
 			// Tag page type
 			setPanel(webviewView, "tab")
@@ -595,15 +652,33 @@ export class ClineProvider
 		// This happens when the user closes the view or when the view is closed programmatically
 		webviewView.onDidDispose(
 			async () => {
+				// Log the dispose event trigger with detailed context
+				await this.fileLogger.info('WEBVIEW_LIFECYCLE', '[DIAGNOSTIC-DISPOSE] Webview onDidDispose event triggered', {
+					mode: inTabMode ? 'tab' : 'sidebar',
+					viewVisible: this.view?.visible,
+					webviewDisposablesCount: this.webviewDisposables.length,
+					mainDisposablesCount: this.disposables.length,
+					timestamp: new Date().toISOString()
+				}).catch(error => console.error('[DIAGNOSTIC-DISPOSE] FileLogger error:', error))
+
 				if (inTabMode) {
 					this.log("Disposing ClineProvider instance for tab view")
+					await this.fileLogger.info('WEBVIEW_LIFECYCLE', '[DIAGNOSTIC-DISPOSE] Disposing ClineProvider instance for tab view')
+						.catch(error => console.error('[DIAGNOSTIC-DISPOSE] FileLogger error:', error))
 					await this.dispose()
 				} else {
 					this.log("Clearing webview resources for sidebar view")
+					await this.fileLogger.info('WEBVIEW_LIFECYCLE', '[DIAGNOSTIC-DISPOSE] Clearing webview resources for sidebar view')
+						.catch(error => console.error('[DIAGNOSTIC-DISPOSE] FileLogger error:', error))
 					this.clearWebviewResources()
 					// Reset current workspace manager reference when view is disposed
 					this.currentWorkspaceManager = undefined
 				}
+
+				await this.fileLogger.info('WEBVIEW_LIFECYCLE', '[DIAGNOSTIC-DISPOSE] Webview onDidDispose event completed', {
+					mode: inTabMode ? 'tab' : 'sidebar',
+					timestamp: new Date().toISOString()
+				}).catch(error => console.error('[DIAGNOSTIC-DISPOSE] FileLogger error:', error))
 			},
 			null,
 			this.disposables,
