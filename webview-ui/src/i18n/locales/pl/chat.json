@@ -2,6 +2,8 @@
 	"greeting": "Witamy w Roo Code",
 	"task": {
 		"title": "Zadanie",
+		"expand": "Rozwiń zadanie",
+		"collapse": "Zwiń zadanie",
 		"seeMore": "Zobacz więcej",
 		"seeLess": "Zobacz mniej",
 		"tokens": "Tokeny",
@@ -263,6 +265,12 @@
 	},
 	"announcement": {
 		"title": "🎉 Roo Code {{version}} wydany",
+		"stealthModel": {
+			"feature": "<bold>Darmowy model stealth na ograniczony czas</bold> - Błyskawiczny model rozumowania, który doskonale radzi sobie z kodowaniem agentowym z oknem kontekstu 262k, dostępny przez Roo Code Cloud.",
+			"note": "(Uwaga: prompty i uzupełnienia są rejestrowane przez twórcę modelu i używane do jego ulepszania)",
+			"connectButton": "Połącz z Roo Code Cloud",
+			"selectModel": "Wybierz <code>roo/sonic</code> od dostawcy Roo Code Cloud w<br/><settingsLink>Ustawieniach</settingsLink> aby rozpocząć"
+		},
 		"description": "Roo Code {{version}} wprowadza potężne nowe funkcje i znaczące ulepszenia, aby ulepszyć Twój przepływ pracy programistycznej.",
 		"whatsNew": "Co nowego",
 		"feature1": "<bold>Kolejka Wiadomości</bold>: Umieszczaj wiele wiadomości w kolejce podczas pracy Roo, pozwalając na kontynuowanie planowania przepływu pracy bez przerw.",
@@ -347,9 +355,9 @@
 		"ariaLabel": "Wersja {{version}} - Kliknij, aby wyświetlić informacje o wydaniu"
 	},
 	"rooCloudCTA": {
-		"title": "Roo Code Cloud już wkrótce!",
+		"title": "Roo Code Cloud się rozwija!",
 		"description": "Uruchamiaj zdalne agenty w chmurze, uzyskuj dostęp do swoich zadań z dowolnego miejsca, współpracuj z innymi i wiele więcej.",
-		"joinWaitlist": "Dołącz do listy oczekujących, aby uzyskać wczesny dostęp."
+		"joinWaitlist": "Zarejestruj się, aby otrzymywać najnowsze aktualizacje."
 	},
 	"editMessage": {
 		"placeholder": "Edytuj swoją wiadomość..."
@@ -360,7 +368,8 @@
 	"slashCommands": {
 		"tooltip": "Zarządzaj poleceniami slash",
 		"title": "Polecenia Slash",
-		"description": "Twórz niestandardowe polecenia slash dla szybkiego dostępu do często używanych promptów i przepływów pracy. <DocsLink>Dokumentacja</DocsLink>",
+		"description": "Używaj wbudowanych poleceń slash lub twórz niestandardowe dla szybkiego dostępu do często używanych promptów i przepływów pracy. <DocsLink>Dokumentacja</DocsLink>",
+		"builtInCommands": "Polecenia Wbudowane",
 		"globalCommands": "Polecenia Globalne",
 		"workspaceCommands": "Polecenia Obszaru Roboczego",
 		"globalCommand": "Polecenie globalne",

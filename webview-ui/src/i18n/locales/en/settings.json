@@ -252,16 +252,27 @@
 			"error": "Failed to refresh models list. Please try again."
 		},
 		"getRequestyApiKey": "Get Requesty API Key",
+		"getRequestyBaseUrl": "Base URL",
+		"requestyUseCustomBaseUrl": "Use custom base URL",
 		"openRouterTransformsText": "Compress prompts and message chains to the context size (<a>OpenRouter Transforms</a>)",
 		"anthropicApiKey": "Anthropic API Key",
 		"getAnthropicApiKey": "Get Anthropic API Key",
 		"anthropicUseAuthToken": "Pass Anthropic API Key as Authorization header instead of X-Api-Key",
+		"anthropic1MContextBetaLabel": "Enable 1M context window (Beta)",
+		"anthropic1MContextBetaDescription": "Extends context window to 1 million tokens for Claude Sonnet 4",
+		"awsBedrock1MContextBetaLabel": "Enable 1M context window (Beta)",
+		"awsBedrock1MContextBetaDescription": "Extends context window to 1 million tokens for Claude Sonnet 4",
 		"cerebrasApiKey": "Cerebras API Key",
 		"getCerebrasApiKey": "Get Cerebras API Key",
 		"chutesApiKey": "Chutes API Key",
 		"getChutesApiKey": "Get Chutes API Key",
 		"fireworksApiKey": "Fireworks API Key",
 		"getFireworksApiKey": "Get Fireworks API Key",
+		"featherlessApiKey": "Featherless API Key",
+		"getFeatherlessApiKey": "Get Featherless API Key",
+		"ioIntelligenceApiKey": "IO Intelligence API Key",
+		"ioIntelligenceApiKeyPlaceholder": "Enter your IO Intelligence API key",
+		"getIoIntelligenceApiKey": "Get IO Intelligence API Key",
 		"deepSeekApiKey": "DeepSeek API Key",
 		"getDeepSeekApiKey": "Get DeepSeek API Key",
 		"doubaoApiKey": "Doubao API Key",
@@ -367,6 +378,10 @@
 			"description": "No API key is required, but the user needs to help copy and paste the information to the web chat AI.",
 			"instructions": "During use, a dialog box will pop up and the current message will be copied to the clipboard automatically. You need to paste these to web versions of AI (such as ChatGPT or Claude), then copy the AI's reply back to the dialog box and click the confirm button."
 		},
+		"roo": {
+			"authenticatedMessage": "Securely authenticated through your Roo Code Cloud account.",
+			"connectButton": "Connect to Roo Code Cloud"
+		},
 		"openRouter": {
 			"providerRouting": {
 				"title": "OpenRouter Provider Routing",
@@ -428,9 +443,10 @@
 		},
 		"reasoningEffort": {
 			"label": "Model Reasoning Effort",
-			"high": "High",
+			"minimal": "Minimal (Fastest)",
+			"low": "Low",
 			"medium": "Medium",
-			"low": "Low"
+			"high": "High"
 		},
 		"verbosity": {
 			"label": "Output Verbosity",
@@ -706,6 +722,10 @@
 		"ASSISTANT_MESSAGE_PARSER": {
 			"name": "Use new message parser",
 			"description": "Enable the experimental streaming message parser that provides significant performance improvements for long assistant responses by processing messages more efficiently."
+		},
+		"NEW_TASK_REQUIRE_TODOS": {
+			"name": "Require 'todos' list for new tasks",
+			"description": "When enabled, the new_task tool will require a todos parameter to be provided. This ensures all new tasks start with a clear list of objectives. When disabled (default), the todos parameter remains optional for backward compatibility."
 		}
 	},
 	"promptCaching": {
@@ -724,6 +744,7 @@
 		"noComputerUse": "Does not support computer use",
 		"supportsPromptCache": "Supports prompt caching",
 		"noPromptCache": "Does not support prompt caching",
+		"contextWindow": "Context Window:",
 		"maxOutput": "Max output",
 		"inputPrice": "Input price",
 		"outputPrice": "Output price",
@@ -777,7 +798,8 @@
 		"modelAvailability": "The model ID ({{modelId}}) you provided is not available. Please choose a different model.",
 		"providerNotAllowed": "Provider '{{provider}}' is not allowed by your organization",
 		"modelNotAllowed": "Model '{{model}}' is not allowed for provider '{{provider}}' by your organization",
-		"profileInvalid": "This profile contains a provider or model that is not allowed by your organization"
+		"profileInvalid": "This profile contains a provider or model that is not allowed by your organization",
+		"qwenCodeOauthPath": "You must provide a valid OAuth credentials path."
 	},
 	"placeholders": {
 		"apiKey": "Enter API Key...",

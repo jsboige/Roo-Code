@@ -253,16 +253,27 @@
 			"error": "Nie udało się odświeżyć listy modeli. Spróbuj ponownie."
 		},
 		"getRequestyApiKey": "Uzyskaj klucz API Requesty",
+		"getRequestyBaseUrl": "Bazowy URL",
+		"requestyUseCustomBaseUrl": "Użyj niestandardowego bazowego URL",
 		"openRouterTransformsText": "Kompresuj podpowiedzi i łańcuchy wiadomości do rozmiaru kontekstu (<a>Transformacje OpenRouter</a>)",
 		"anthropicApiKey": "Klucz API Anthropic",
 		"getAnthropicApiKey": "Uzyskaj klucz API Anthropic",
 		"anthropicUseAuthToken": "Przekaż klucz API Anthropic jako nagłówek Authorization zamiast X-Api-Key",
+		"anthropic1MContextBetaLabel": "Włącz okno kontekstowe 1M (Beta)",
+		"anthropic1MContextBetaDescription": "Rozszerza okno kontekstowe do 1 miliona tokenów dla Claude Sonnet 4",
+		"awsBedrock1MContextBetaLabel": "Włącz okno kontekstowe 1M (Beta)",
+		"awsBedrock1MContextBetaDescription": "Rozszerza okno kontekstowe do 1 miliona tokenów dla Claude Sonnet 4",
 		"cerebrasApiKey": "Klucz API Cerebras",
 		"getCerebrasApiKey": "Pobierz klucz API Cerebras",
 		"chutesApiKey": "Klucz API Chutes",
 		"getChutesApiKey": "Uzyskaj klucz API Chutes",
 		"fireworksApiKey": "Klucz API Fireworks",
 		"getFireworksApiKey": "Uzyskaj klucz API Fireworks",
+		"featherlessApiKey": "Klucz API Featherless",
+		"getFeatherlessApiKey": "Uzyskaj klucz API Featherless",
+		"ioIntelligenceApiKey": "Klucz API IO Intelligence",
+		"ioIntelligenceApiKeyPlaceholder": "Wprowadź swój klucz API IO Intelligence",
+		"getIoIntelligenceApiKey": "Uzyskaj klucz API IO Intelligence",
 		"deepSeekApiKey": "Klucz API DeepSeek",
 		"getDeepSeekApiKey": "Uzyskaj klucz API DeepSeek",
 		"doubaoApiKey": "Klucz API Doubao",
@@ -368,6 +379,10 @@
 			"description": "Nie jest wymagany klucz API, ale użytkownik będzie musiał pomóc w kopiowaniu i wklejaniu informacji do czatu internetowego AI.",
 			"instructions": "Podczas użytkowania pojawi się okno dialogowe, a bieżąca wiadomość zostanie automatycznie skopiowana do schowka. Będziesz musiał wkleić ją do internetowych wersji AI (takich jak ChatGPT lub Claude), a następnie skopiować odpowiedź AI z powrotem do okna dialogowego i kliknąć przycisk potwierdzenia."
 		},
+		"roo": {
+			"authenticatedMessage": "Bezpiecznie uwierzytelniony przez twoje konto Roo Code Cloud.",
+			"connectButton": "Połącz z Roo Code Cloud"
+		},
 		"openRouter": {
 			"providerRouting": {
 				"title": "Routing dostawców OpenRouter",
@@ -429,6 +444,7 @@
 		},
 		"reasoningEffort": {
 			"label": "Wysiłek rozumowania modelu",
+			"minimal": "Minimalny (najszybszy)",
 			"high": "Wysoki",
 			"medium": "Średni",
 			"low": "Niski"
@@ -704,6 +720,10 @@
 		"ASSISTANT_MESSAGE_PARSER": {
 			"name": "Użyj nowego parsera wiadomości",
 			"description": "Włącz eksperymentalny parser wiadomości w strumieniu, który przyspiesza długie odpowiedzi dzięki bardziej wydajnemu przetwarzaniu wiadomości."
+		},
+		"NEW_TASK_REQUIRE_TODOS": {
+			"name": "Wymagaj listy 'todos' dla nowych zadań",
+			"description": "Gdy włączone, narzędzie new_task będzie wymagało podania parametru todos. Zapewnia to, że wszystkie nowe zadania rozpoczynają się od jasnej listy celów. Gdy wyłączone (domyślnie), parametr todos pozostaje opcjonalny dla zachowania kompatybilności wstecznej."
 		}
 	},
 	"promptCaching": {
@@ -722,6 +742,7 @@
 		"noComputerUse": "Nie obsługuje użycia komputera",
 		"supportsPromptCache": "Obsługuje buforowanie podpowiedzi",
 		"noPromptCache": "Nie obsługuje buforowania podpowiedzi",
+		"contextWindow": "Okno kontekstowe:",
 		"maxOutput": "Maksymalne wyjście",
 		"inputPrice": "Cena wejścia",
 		"outputPrice": "Cena wyjścia",
@@ -775,7 +796,8 @@
 		"modelAvailability": "Podane ID modelu ({{modelId}}) jest niedostępne. Wybierz inny model.",
 		"providerNotAllowed": "Dostawca '{{provider}}' nie jest dozwolony przez Twoją organizację",
 		"modelNotAllowed": "Model '{{model}}' nie jest dozwolony dla dostawcy '{{provider}}' przez Twoją organizację",
-		"profileInvalid": "Ten profil zawiera dostawcę lub model, który nie jest dozwolony przez Twoją organizację"
+		"profileInvalid": "Ten profil zawiera dostawcę lub model, który nie jest dozwolony przez Twoją organizację",
+		"qwenCodeOauthPath": "Musisz podać prawidłową ścieżkę do poświadczeń OAuth"
 	},
 	"placeholders": {
 		"apiKey": "Wprowadź klucz API...",
