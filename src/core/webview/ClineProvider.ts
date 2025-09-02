@@ -159,7 +159,7 @@ export class ClineProvider
 		})
 
 		// Initialize MCP Hub through the singleton manager
-		this.fileLogger = new FileLogger(context.logUri, "cline-provider.log")
+		this.fileLogger = new FileLogger(context.logUri.fsPath, "cline-provider.log")
 		McpServerManager.getInstance(this.context, this)
 			.then((hub) => {
 				this.mcpHub = hub

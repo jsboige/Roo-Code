@@ -2,7 +2,7 @@ import * as fs from "fs"
 import * as path from "path"
 import { createWriteStream, WriteStream } from "fs"
 
-export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG'
+export type LogLevel = "INFO" | "WARN" | "ERROR" | "DEBUG"
 
 export interface LogMetadata {
 	[key: string]: any
@@ -18,7 +18,7 @@ export interface LogEntry {
 
 /**
  * FileLogger - Système de journalisation persistante pour diagnostic des crashes webview
- * 
+ *
  * Fonctionnalités :
  * - Logging persistant survit aux crashes de webview
  * - Support des niveaux de log (INFO, WARN, ERROR, DEBUG)
@@ -35,13 +35,13 @@ export class FileLogger {
 	private maxLogFileSize: number = 10 * 1024 * 1024 // 10MB par défaut
 	private maxLogFiles: number = 5
 
-	constructor(baseDir: string, filename: string = 'roo-code-debug.log') {
+	constructor(baseDir: string, filename: string = "roo-code-debug.log") {
 		// Créer le répertoire .logs dans le baseDir
-		const logsDir = path.join(baseDir, '.logs')
+		const logsDir = path.join(baseDir, ".logs")
 		this.logFilePath = path.join(logsDir, filename)
-		
+
 		// Initialisation asynchrone pour éviter de bloquer le constructeur
-		this.initialize().catch(error => {
+		this.initialize().catch((error) => {
 			console.error(`[FileLogger] Failed to initialize: ${error}`)
 		})
 	}
@@ -59,24 +59,23 @@ export class FileLogger {
 			await this.checkAndRotateLog()
 
 			// Créer le stream de log
-			this.logStream = createWriteStream(this.logFilePath, { flags: 'a', encoding: 'utf8' })
-			
+			this.logStream = createWriteStream(this.logFilePath, { flags: "a", encoding: "utf8" })
+
 			// Gérer les erreurs du stream
-			this.logStream.on('error', (error) => {
+			this.logStream.on("error", (error) => {
 				console.error(`[FileLogger] Stream error: ${error}`)
 			})
 
 			this.isInitialized = true
-			
+
 			// Écrire les messages en attente
 			await this.processWriteQueue()
 
 			// Log d'initialisation
-			await this.log('INFO', 'FILE_LOGGER', 'FileLogger initialized successfully', {
+			await this.log("INFO", "FILE_LOGGER", "FileLogger initialized successfully", {
 				logFilePath: this.logFilePath,
-				timestamp: new Date().toISOString()
+				timestamp: new Date().toISOString(),
 			})
-
 		} catch (error) {
 			console.error(`[FileLogger] Initialization failed: ${error}`)
 			this.isInitialized = false
@@ -89,13 +88,13 @@ export class FileLogger {
 	private async checkAndRotateLog(): Promise<void> {
 		try {
 			const stats = await fs.promises.stat(this.logFilePath)
-			
+
 			if (stats.size > this.maxLogFileSize) {
 				await this.rotateLogFiles()
 			}
 		} catch (error) {
 			// Fichier n'existe pas encore, pas d'action nécessaire
-			if (error.code !== 'ENOENT') {
+			if (error.code !== "ENOENT") {
 				console.error(`[FileLogger] Error checking log file size: ${error}`)
 			}
 		}
@@ -115,7 +114,7 @@ export class FileLogger {
 			for (let i = this.maxLogFiles - 1; i >= 1; i--) {
 				const currentFile = path.join(dir, `${name}.${i}${ext}`)
 				const nextFile = path.join(dir, `${name}.${i + 1}${ext}`)
-				
+
 				try {
 					await fs.promises.access(currentFile)
 					if (i === this.maxLogFiles - 1) {
@@ -137,7 +136,6 @@ export class FileLogger {
 			} catch (error) {
 				console.error(`[FileLogger] Error rotating main log file: ${error}`)
 			}
-
 		} catch (error) {
 			console.error(`[FileLogger] Error during log rotation: ${error}`)
 		}
@@ -181,7 +179,7 @@ export class FileLogger {
 			level,
 			component,
 			message,
-			metadata
+			metadata,
 		}
 
 		// Formatter la ligne de log
@@ -196,8 +194,8 @@ export class FileLogger {
 		}
 
 		// Aussi logger dans la console pour les erreurs
-		if (level === 'ERROR' || level === 'WARN') {
-			console.log(`[${level}] ${component}: ${message}`, metadata || '')
+		if (level === "ERROR" || level === "WARN") {
+			console.log(`[${level}] ${component}: ${message}`, metadata || "")
 		}
 	}
 
@@ -205,7 +203,7 @@ export class FileLogger {
 	 * Formate une entrée de log en ligne de texte
 	 */
 	private formatLogEntry(entry: LogEntry): string {
-		const metadataStr = entry.metadata ? ` | ${JSON.stringify(entry.metadata)}` : ''
+		const metadataStr = entry.metadata ? ` | ${JSON.stringify(entry.metadata)}` : ""
 		return `[${entry.timestamp}] ${entry.level} ${entry.component}: ${entry.message}${metadataStr}\n`
 	}
 
@@ -213,19 +211,19 @@ export class FileLogger {
 	 * Méthodes de convenance pour chaque niveau
 	 */
 	async info(component: string, message: string, metadata?: LogMetadata): Promise<void> {
-		return this.log('INFO', component, message, metadata)
+		return this.log("INFO", component, message, metadata)
 	}
 
 	async warn(component: string, message: string, metadata?: LogMetadata): Promise<void> {
-		return this.log('WARN', component, message, metadata)
+		return this.log("WARN", component, message, metadata)
 	}
 
 	async error(component: string, message: string, metadata?: LogMetadata): Promise<void> {
-		return this.log('ERROR', component, message, metadata)
+		return this.log("ERROR", component, message, metadata)
 	}
 
 	async debug(component: string, message: string, metadata?: LogMetadata): Promise<void> {
-		return this.log('DEBUG', component, message, metadata)
+		return this.log("DEBUG", component, message, metadata)
 	}
 
 	/**
@@ -238,15 +236,15 @@ export class FileLogger {
 
 			// Log de fermeture
 			if (this.isInitialized) {
-				await this.log('INFO', 'FILE_LOGGER', 'FileLogger disposing', {
-					pendingMessages: this.writeQueue.length
+				await this.log("INFO", "FILE_LOGGER", "FileLogger disposing", {
+					pendingMessages: this.writeQueue.length,
 				})
 			}
 
 			// Fermer le stream
 			if (this.logStream) {
 				await new Promise<void>((resolve, reject) => {
-					this.logStream!.end((error) => {
+					this.logStream!.end((error: any) => {
 						if (error) reject(error)
 						else resolve()
 					})
