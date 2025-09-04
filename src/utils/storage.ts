@@ -4,6 +4,7 @@ import * as fs from "fs/promises"
 
 import { Package } from "../shared/package"
 import { t } from "../i18n"
+import { ContextProxy } from "../core/config/ContextProxy"
 
 /**
  * Gets the base storage path for conversations
@@ -51,9 +52,9 @@ export async function getStorageBasePath(defaultPath: string): Promise<string> {
 /**
  * Gets the storage directory path for a task
  */
-export async function getTaskDirectoryPath(globalStoragePath: string, taskId: string): Promise<string> {
-	const basePath = await getStorageBasePath(globalStoragePath)
-	const taskDir = path.join(basePath, "tasks", taskId)
+export async function getTaskDirectoryPath(taskId: string): Promise<string> {
+	const tasksUri = ContextProxy.instance.getTasksUri()
+	const taskDir = path.join(tasksUri.fsPath, taskId)
 	await fs.mkdir(taskDir, { recursive: true })
 	return taskDir
 }

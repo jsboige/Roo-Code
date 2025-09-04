@@ -18,7 +18,7 @@ export async function readApiMessages({
 	taskId: string
 	globalStoragePath: string
 }): Promise<ApiMessage[]> {
-	const taskDir = await getTaskDirectoryPath(globalStoragePath, taskId)
+	const taskDir = await getTaskDirectoryPath(taskId)
 	const filePath = path.join(taskDir, GlobalFileNames.apiConversationHistory)
 
 	if (await fileExistsAtPath(filePath)) {
@@ -77,7 +77,7 @@ export async function saveApiMessages({
 	taskId: string
 	globalStoragePath: string
 }) {
-	const taskDir = await getTaskDirectoryPath(globalStoragePath, taskId)
+	const taskDir = await getTaskDirectoryPath(taskId)
 	const filePath = path.join(taskDir, GlobalFileNames.apiConversationHistory)
 	await safeWriteJson(filePath, messages)
 }

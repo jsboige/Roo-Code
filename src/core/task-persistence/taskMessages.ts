@@ -18,7 +18,7 @@ export async function readTaskMessages({
 	taskId,
 	globalStoragePath,
 }: ReadTaskMessagesOptions): Promise<ClineMessage[]> {
-	const taskDir = await getTaskDirectoryPath(globalStoragePath, taskId)
+	const taskDir = await getTaskDirectoryPath(taskId)
 	const filePath = path.join(taskDir, GlobalFileNames.uiMessages)
 	const fileExists = await fileExistsAtPath(filePath)
 
@@ -36,7 +36,7 @@ export type SaveTaskMessagesOptions = {
 }
 
 export async function saveTaskMessages({ messages, taskId, globalStoragePath }: SaveTaskMessagesOptions) {
-	const taskDir = await getTaskDirectoryPath(globalStoragePath, taskId)
+	const taskDir = await getTaskDirectoryPath(taskId)
 	const filePath = path.join(taskDir, GlobalFileNames.uiMessages)
 	await safeWriteJson(filePath, messages)
 }

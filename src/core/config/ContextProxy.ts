@@ -1,4 +1,6 @@
 import * as vscode from "vscode"
+import * as path from "path"
+import * as fs from "fs"
 import { ZodError } from "zod"
 
 import {
@@ -40,18 +42,54 @@ export class ContextProxy {
 	private secretCache: SecretState
 	private _isInitialized = false
 
+	private tasksUri: vscode.Uri
+
 	constructor(context: vscode.ExtensionContext) {
 		this.originalContext = context
 		this.stateCache = {}
 		this.secretCache = {}
 		this._isInitialized = false
+		this.tasksUri = vscode.Uri.file("") // Initialisation par défaut
 	}
 
 	public get isInitialized() {
 		return this._isInitialized
 	}
 
+	public getTasksUri(): vscode.Uri {
+		return this.tasksUri
+	}
+
+	private async migrateTasksToGlobalStorageUri() {
+		const oldStoragePath = path.join(
+			this.originalContext.globalStorageUri.fsPath,
+			"..",
+			"rooveterinaryinc.roo-cline",
+			"tasks",
+		)
+		const newStoragePath = path.join(this.originalContext.globalStorageUri.fsPath, "tasks")
+		this.tasksUri = vscode.Uri.file(newStoragePath)
+
+		try {
+			if (fs.existsSync(oldStoragePath) && !fs.existsSync(newStoragePath)) {
+				logger.info(`Migrating tasks from ${oldStoragePath} to ${newStoragePath}`)
+				await fs.promises.rename(oldStoragePath, newStoragePath)
+				logger.info("Migration successful.")
+				// Idéalement, marquer la migration comme faite dans globalState
+				await this.originalContext.globalState.update("is_migrated_to_globalStorageUri", true)
+			} else {
+				if (!fs.existsSync(newStoragePath)) {
+					await fs.promises.mkdir(newStoragePath, { recursive: true })
+				}
+			}
+		} catch (error) {
+			logger.error(`Failed to migrate tasks: ${error}`)
+		}
+	}
+
 	public async initialize() {
+		await this.migrateTasksToGlobalStorageUri()
+
 		for (const key of GLOBAL_STATE_KEYS) {
 			try {
 				// Revert to original assignment

@@ -29,7 +29,7 @@ export async function taskMetadata({
 	workspace,
 	mode,
 }: TaskMetadataOptions) {
-	const taskDir = await getTaskDirectoryPath(globalStoragePath, taskId)
+	const taskDir = await getTaskDirectoryPath(taskId)
 
 	// Determine message availability upfront
 	const hasMessages = messages && messages.length > 0
