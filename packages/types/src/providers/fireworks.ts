@@ -2,14 +2,31 @@ import type { ModelInfo } from "../model.js"
 
 export type FireworksModelId =
 	| "accounts/fireworks/models/kimi-k2-instruct"
+	| "accounts/fireworks/models/kimi-k2-instruct-0905"
 	| "accounts/fireworks/models/qwen3-235b-a22b-instruct-2507"
 	| "accounts/fireworks/models/qwen3-coder-480b-a35b-instruct"
 	| "accounts/fireworks/models/deepseek-r1-0528"
 	| "accounts/fireworks/models/deepseek-v3"
+	| "accounts/fireworks/models/deepseek-v3p1"
+	| "accounts/fireworks/models/glm-4p5"
+	| "accounts/fireworks/models/glm-4p5-air"
+	| "accounts/fireworks/models/gpt-oss-20b"
+	| "accounts/fireworks/models/gpt-oss-120b"
 
-export const fireworksDefaultModelId: FireworksModelId = "accounts/fireworks/models/kimi-k2-instruct"
+export const fireworksDefaultModelId: FireworksModelId = "accounts/fireworks/models/kimi-k2-instruct-0905"
 
 export const fireworksModels = {
+	"accounts/fireworks/models/kimi-k2-instruct-0905": {
+		maxTokens: 16384,
+		contextWindow: 262144,
+		supportsImages: false,
+		supportsPromptCache: true,
+		inputPrice: 0.6,
+		outputPrice: 2.5,
+		cacheReadsPrice: 0.15,
+		description:
+			"Kimi K2 model gets a new version update: Agentic coding: more accurate, better generalization across scaffolds. Frontend coding: improved aesthetics and functionalities on web, 3d, and other tasks. Context length: extended from 128k to 256k, providing better long-horizon support.",
+	},
 	"accounts/fireworks/models/kimi-k2-instruct": {
 		maxTokens: 16384,
 		contextWindow: 128000,
@@ -57,5 +74,55 @@ export const fireworksModels = {
 		outputPrice: 0.9,
 		description:
 			"A strong Mixture-of-Experts (MoE) language model with 671B total parameters with 37B activated for each token from Deepseek. Note that fine-tuning for this model is only available through contacting fireworks at https://fireworks.ai/company/contact-us.",
+	},
+	"accounts/fireworks/models/deepseek-v3p1": {
+		maxTokens: 16384,
+		contextWindow: 163840,
+		supportsImages: false,
+		supportsPromptCache: false,
+		inputPrice: 0.56,
+		outputPrice: 1.68,
+		description:
+			"DeepSeek v3.1 is an improved version of the v3 model with enhanced performance, better reasoning capabilities, and improved code generation. This Mixture-of-Experts (MoE) model maintains the same 671B total parameters with 37B activated per token.",
+	},
+	"accounts/fireworks/models/glm-4p5": {
+		maxTokens: 16384,
+		contextWindow: 128000,
+		supportsImages: false,
+		supportsPromptCache: false,
+		inputPrice: 0.55,
+		outputPrice: 2.19,
+		description:
+			"Z.ai GLM-4.5 with 355B total parameters and 32B active parameters. Features unified reasoning, coding, and intelligent agent capabilities.",
+	},
+	"accounts/fireworks/models/glm-4p5-air": {
+		maxTokens: 16384,
+		contextWindow: 128000,
+		supportsImages: false,
+		supportsPromptCache: false,
+		inputPrice: 0.55,
+		outputPrice: 2.19,
+		description:
+			"Z.ai GLM-4.5-Air with 106B total parameters and 12B active parameters. Features unified reasoning, coding, and intelligent agent capabilities.",
+	},
+	"accounts/fireworks/models/gpt-oss-20b": {
+		maxTokens: 16384,
+		contextWindow: 128000,
+		supportsImages: false,
+		supportsPromptCache: false,
+		inputPrice: 0.07,
+		outputPrice: 0.3,
+		description:
+			"OpenAI gpt-oss-20b: Compact model for local/edge deployments. Optimized for low-latency and resource-constrained environments with chain-of-thought output, adjustable reasoning, and agentic workflows.",
+	},
+	"accounts/fireworks/models/gpt-oss-120b": {
+		maxTokens: 16384,
+		contextWindow: 128000,
+		supportsImages: false,
+		supportsPromptCache: false,
+		inputPrice: 0.15,
+		outputPrice: 0.6,
+		description:
+			"OpenAI gpt-oss-120b: Production-grade, general-purpose model that fits on a single H100 GPU. Features complex reasoning, configurable effort, full chain-of-thought transparency, and supports function calling, tool use, and structured outputs.",
 	},
 } as const satisfies Record<string, ModelInfo>
