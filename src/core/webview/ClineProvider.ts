@@ -9,6 +9,7 @@ import axios from "axios"
 import pWaitFor from "p-wait-for"
 import * as vscode from "vscode"
 
+import { FileLogger } from "../logging/FileLogger"
 import {
 	type TaskProviderLike,
 	type TaskProviderEvents,
@@ -117,6 +118,7 @@ export class ClineProvider
 	protected mcpHub?: McpHub // Change from private to protected
 	private marketplaceManager: MarketplaceManager
 	private mdmService?: MdmService
+	private fileLogger: FileLogger
 	private taskCreationCallback: (task: Task) => void
 	private taskEventListeners: WeakMap<Task, Array<() => void>> = new WeakMap()
 
@@ -158,6 +160,7 @@ export class ClineProvider
 		})
 
 		// Initialize MCP Hub through the singleton manager
+		this.fileLogger = new FileLogger(context.logUri.fsPath, "cline-provider.log")
 		McpServerManager.getInstance(this.context, this)
 			.then((hub) => {
 				this.mcpHub = hub
@@ -493,6 +496,7 @@ export class ClineProvider
 		this.customModesManager?.dispose()
 		this.log("Disposed all disposables")
 		ClineProvider.activeInstances.delete(this)
+		this.fileLogger.info("CLINE_PROVIDER", "Disposing ClineProvider")
 
 		// Clean up any event listeners attached to this provider
 		this.removeAllListeners()

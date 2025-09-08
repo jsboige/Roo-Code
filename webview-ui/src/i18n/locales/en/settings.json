@@ -540,6 +540,10 @@
 			"name": "Automatically trigger intelligent context condensing",
 			"description": "When enabled, Roo will automatically condense the context when the threshold is reached. When disabled, you can still manually trigger context condensing."
 		},
+		"useSelectiveCondensation": {
+			"name": "Use selective condensation (Beta)",
+			"description": "Instead of summarizing the entire history, this will only condense large tool results, preserving the conversation structure."
+		},
 		"openTabs": {
 			"label": "Open tabs context limit",
 			"description": "Maximum number of VSCode open tabs to include in context. Higher values provide more context but increase token usage."
