@@ -247,7 +247,8 @@
 		"issues": "Có vẻ như bạn đang gặp vấn đề với Windows PowerShell, vui lòng xem"
 	},
 	"autoApprove": {
-		"tooltip": "Quản lý cài đặt tự động phê duyệt",
+		"tooltipManage": "Quản lý cài đặt tự động phê duyệt",
+		"tooltipStatus": "Tự động phê duyệt được bật cho: {{toggles}}",
 		"title": "Tự động phê duyệt",
 		"all": "Tất cả",
 		"none": "Không có",
@@ -255,7 +256,8 @@
 		"selectOptionsFirst": "Chọn ít nhất một tùy chọn bên dưới để bật tính năng tự động phê duyệt",
 		"toggleAriaLabel": "Bật/tắt tự động phê duyệt",
 		"disabledAriaLabel": "Tự động phê duyệt đã tắt - trước tiên hãy chọn các tùy chọn",
-		"triggerLabel_zero": "Không có tự động phê duyệt",
+		"triggerLabelOff": "Tự động phê duyệt tắt",
+		"triggerLabel_zero": "0 được tự động phê duyệt",
 		"triggerLabel_one": "1 được tự động phê duyệt",
 		"triggerLabel_other": "{{count}} được tự động phê duyệt",
 		"triggerLabelAll": "YOLO"
@@ -374,6 +376,7 @@
 		"tooltip": "Quản lý lệnh gạch chéo",
 		"title": "Lệnh Gạch Chéo",
 		"description": "Sử dụng lệnh gạch chéo tích hợp sẵn hoặc tạo tùy chỉnh để truy cập nhanh vào các lời nhắc và quy trình làm việc thường dùng. <DocsLink>Tài liệu</DocsLink>",
+		"manageCommands": "Quản lý các lệnh slash trong cài đặt",
 		"builtInCommands": "Lệnh Tích Hợp",
 		"globalCommands": "Lệnh Toàn Cục",
 		"workspaceCommands": "Lệnh Không Gian Làm Việc",
@@ -389,6 +392,12 @@
 			"confirm": "Xóa"
 		}
 	},
+	"contextMenu": {
+		"noResults": "Không có kết quả",
+		"problems": "Vấn đề",
+		"terminal": "Terminal",
+		"url": "Dán URL để lấy nội dung"
+	},
 	"queuedMessages": {
 		"title": "Tin nhắn trong hàng đợi:",
 		"clickToEdit": "Nhấp để chỉnh sửa tin nhắn"
@@ -396,5 +405,17 @@
 	"slashCommand": {
 		"wantsToRun": "Roo muốn chạy lệnh slash:",
 		"didRun": "Roo đã chạy lệnh slash:"
+	},
+	"ask": {
+		"autoApprovedRequestLimitReached": {
+			"title": "Đã Đạt Giới Hạn Yêu Cầu Tự Động Phê Duyệt",
+			"description": "Roo đã đạt đến giới hạn tự động phê duyệt là {{count}} yêu cầu API. Bạn có muốn đặt lại bộ đếm và tiếp tục nhiệm vụ không?",
+			"button": "Đặt lại và Tiếp tục"
+		},
+		"autoApprovedCostLimitReached": {
+			"title": "Đã Đạt Giới Hạn Chi Phí Tự Động Phê Duyệt",
+			"description": "Roo đã đạt đến giới hạn chi phí tự động phê duyệt là ${{count}}. Bạn có muốn đặt lại chi phí và tiếp tục với nhiệm vụ không?",
+			"button": "Đặt lại và Tiếp tục"
+		}
 	}
 }
