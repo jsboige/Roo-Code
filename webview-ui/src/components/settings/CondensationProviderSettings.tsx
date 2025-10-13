@@ -121,7 +121,8 @@ export const CondensationProviderSettings: React.FC = () => {
 	}, [])
 
 	const handleDefaultProviderChange = (providerId: string) => {
-		setDefaultProviderId(providerId)
+		// Don't update local state optimistically - let backend be the source of truth
+		// This prevents race conditions when clicking rapidly between providers
 		vscode.postMessage({
 			type: "setDefaultCondensationProvider",
 			providerId,
@@ -129,8 +130,9 @@ export const CondensationProviderSettings: React.FC = () => {
 	}
 
 	const handleSmartPresetChange = (preset: SmartPreset) => {
+		// Don't update local state optimistically - let backend be the source of truth
+		// This prevents race conditions when clicking rapidly between presets
 		const newSettings = { ...smartSettings, preset }
-		setSmartSettings(newSettings)
 		vscode.postMessage({
 			type: "updateSmartProviderSettings",
 			smartProviderSettings: newSettings,
@@ -151,12 +153,11 @@ export const CondensationProviderSettings: React.FC = () => {
 				throw new Error("Configuration must include 'passes' array")
 			}
 
-			// Save
+			// Save - don't update local state optimistically
 			const newSettings = {
 				...smartSettings,
 				customConfig: customConfigText,
 			}
-			setSmartSettings(newSettings)
 			setConfigError(undefined)
 
 			vscode.postMessage({
@@ -176,11 +177,11 @@ export const CondensationProviderSettings: React.FC = () => {
 	}
 
 	const resetToPreset = () => {
+		// Don't update local state optimistically - let backend be the source of truth
 		const newSettings = {
 			preset: smartSettings.preset,
 			customConfig: undefined,
 		}
-		setSmartSettings(newSettings)
 		setCustomConfigText(presetConfigJson)
 		setConfigError(undefined)
 
@@ -232,19 +233,21 @@ export const CondensationProviderSettings: React.FC = () => {
 					{/* Provider Selection */}
 					<div className="mt-4">
 						<h4 className="mb-3 font-medium">Select Provider</h4>
-						<VSCodeRadioGroup value={defaultProviderId}>
+						<VSCodeRadioGroup
+							value={defaultProviderId}
+							onChange={(e: any) => handleDefaultProviderChange(e.target.value)}>
 							{[
-								{
-									id: "smart",
-									name: "Smart Provider",
-									description:
-										"Intelligent multi-pass condensation with configurable presets (Recommended)",
-								},
 								{
 									id: "native",
 									name: "Native Provider",
 									description:
 										"LLM-based intelligent summarization (High quality, slower, expensive)",
+								},
+								{
+									id: "smart",
+									name: "Smart Provider",
+									description:
+										"Intelligent multi-pass condensation with configurable presets (Recommended)",
 								},
 								{
 									id: "lossless",
@@ -261,7 +264,6 @@ export const CondensationProviderSettings: React.FC = () => {
 								<div key={provider.id} className="mb-3">
 									<VSCodeRadio
 										value={provider.id}
-										onChange={() => handleDefaultProviderChange(provider.id)}
 										checked={defaultProviderId === provider.id}>
 										<div className="flex items-start justify-between w-full">
 											<div className="flex-1">
