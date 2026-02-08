@@ -13,6 +13,8 @@ import { addCacheBreakpoints as addVertexCacheBreakpoints } from "../transform/c
 
 import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
 import { RouterProvider } from "./router-provider"
+import { getModelParams } from "../transform/model-params"
+import { getModels } from "./fetchers/modelCache"
 
 const ORIGIN_APP = "roo-code"
 
@@ -52,12 +54,36 @@ export class UnboundHandler extends RouterProvider implements SingleCompletionHa
 		})
 	}
 
+	public override async fetchModel() {
+		this.models = await getModels({ provider: this.name, apiKey: this.client.apiKey, baseUrl: this.client.baseURL })
+		return this.getModel()
+	}
+
+	override getModel() {
+		const requestedId = this.options.unboundModelId ?? unboundDefaultModelId
+		const modelExists = this.models[requestedId]
+		const id = modelExists ? requestedId : unboundDefaultModelId
+		const info = modelExists ? this.models[requestedId] : unboundDefaultModelInfo
+
+		const params = getModelParams({
+			format: "openai",
+			modelId: id,
+			model: info,
+			settings: this.options,
+			defaultTemperature: 0,
+		})
+
+		return { id, info, ...params }
+	}
+
 	override async *createMessage(
 		systemPrompt: string,
 		messages: Anthropic.Messages.MessageParam[],
 		metadata?: ApiHandlerCreateMessageMetadata,
 	): ApiStream {
-		const { id: modelId, info } = await this.fetchModel()
+		// Ensure we have up-to-date model metadata
+		await this.fetchModel()
+		const { id: modelId, info } = this.getModel()
 
 		const openAiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
 			{ role: "system", content: systemPrompt },
@@ -88,11 +114,15 @@ export class UnboundHandler extends RouterProvider implements SingleCompletionHa
 			max_tokens: maxTokens,
 			messages: openAiMessages,
 			stream: true,
+			stream_options: { include_usage: true },
 			unbound_metadata: {
 				originApp: ORIGIN_APP,
 				taskId: metadata?.taskId,
 				mode: metadata?.mode,
 			},
+			tools: this.convertToolsForOpenAI(metadata?.tools),
+			tool_choice: metadata?.tool_choice,
+			parallel_tool_calls: metadata?.parallelToolCalls ?? true,
 		}
 
 		if (this.supportsTemperature(modelId)) {
@@ -109,6 +139,19 @@ export class UnboundHandler extends RouterProvider implements SingleCompletionHa
 
 			if (delta?.content) {
 				yield { type: "text", text: delta.content }
+			}
+
+			// Handle tool calls in stream - emit partial chunks for NativeToolCallParser
+			if (delta?.tool_calls) {
+				for (const toolCall of delta.tool_calls) {
+					yield {
+						type: "tool_call_partial",
+						index: toolCall.index,
+						id: toolCall.id,
+						name: toolCall.function?.name,
+						arguments: toolCall.function?.arguments,
+					}
+				}
 			}
 
 			if (usage) {

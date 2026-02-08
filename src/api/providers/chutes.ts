@@ -1,103 +1,242 @@
-import { DEEP_SEEK_DEFAULT_TEMPERATURE, type ChutesModelId, chutesDefaultModelId, chutesModels } from "@roo-code/types"
 import { Anthropic } from "@anthropic-ai/sdk"
-import OpenAI from "openai"
+import { streamText, generateText, LanguageModel, ToolSet } from "ai"
+
+import {
+	DEEP_SEEK_DEFAULT_TEMPERATURE,
+	chutesDefaultModelId,
+	chutesDefaultModelInfo,
+	type ModelInfo,
+	type ModelRecord,
+} from "@roo-code/types"
 
 import type { ApiHandlerOptions } from "../../shared/api"
-import { XmlMatcher } from "../../utils/xml-matcher"
-import { convertToR1Format } from "../transform/r1-format"
-import { convertToOpenAiMessages } from "../transform/openai-format"
+import { getModelMaxOutputTokens } from "../../shared/api"
+import { TagMatcher } from "../../utils/tag-matcher"
+import {
+	convertToAiSdkMessages,
+	convertToolsForAiSdk,
+	processAiSdkStreamPart,
+	mapToolChoice,
+	handleAiSdkError,
+} from "../transform/ai-sdk"
 import { ApiStream } from "../transform/stream"
+import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
 
-import { BaseOpenAiCompatibleProvider } from "./base-openai-compatible-provider"
+import { OpenAICompatibleHandler, OpenAICompatibleConfig } from "./openai-compatible"
+import { getModels, getModelsFromCache } from "./fetchers/modelCache"
 
-export class ChutesHandler extends BaseOpenAiCompatibleProvider<ChutesModelId> {
+export class ChutesHandler extends OpenAICompatibleHandler implements SingleCompletionHandler {
+	private models: ModelRecord = {}
+
 	constructor(options: ApiHandlerOptions) {
-		super({
-			...options,
-			providerName: "Chutes",
+		const modelId = options.apiModelId ?? chutesDefaultModelId
+
+		const config: OpenAICompatibleConfig = {
+			providerName: "chutes",
 			baseURL: "https://llm.chutes.ai/v1",
-			apiKey: options.chutesApiKey,
-			defaultProviderModelId: chutesDefaultModelId,
-			providerModels: chutesModels,
-			defaultTemperature: 0.5,
-		})
+			apiKey: options.chutesApiKey ?? "not-provided",
+			modelId,
+			modelInfo: chutesDefaultModelInfo,
+		}
+
+		super(options, config)
 	}
 
-	private getCompletionParams(
-		systemPrompt: string,
-		messages: Anthropic.Messages.MessageParam[],
-	): OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming {
-		const {
-			id: model,
-			info: { maxTokens: max_tokens },
-		} = this.getModel()
+	async fetchModel() {
+		this.models = await getModels({ provider: "chutes", apiKey: this.config.apiKey, baseUrl: this.config.baseURL })
+		return this.getModel()
+	}
 
-		const temperature = this.options.modelTemperature ?? this.getModel().info.temperature
+	override getModel(): { id: string; info: ModelInfo; temperature?: number } {
+		const id = this.options.apiModelId ?? chutesDefaultModelId
+
+		let info: ModelInfo | undefined = this.models[id]
+
+		if (!info) {
+			const cachedModels = getModelsFromCache("chutes")
+			if (cachedModels?.[id]) {
+				this.models = cachedModels
+				info = cachedModels[id]
+			}
+		}
+
+		if (!info) {
+			const isDeepSeekR1 = chutesDefaultModelId.includes("DeepSeek-R1")
+			const defaultTemp = isDeepSeekR1 ? DEEP_SEEK_DEFAULT_TEMPERATURE : 0.5
+			return {
+				id: chutesDefaultModelId,
+				info: {
+					...chutesDefaultModelInfo,
+					defaultTemperature: defaultTemp,
+				},
+				temperature: this.options.modelTemperature ?? defaultTemp,
+			}
+		}
+
+		const isDeepSeekR1 = id.includes("DeepSeek-R1")
+		const defaultTemp = isDeepSeekR1 ? DEEP_SEEK_DEFAULT_TEMPERATURE : 0.5
 
 		return {
-			model,
-			max_tokens,
-			temperature,
-			messages: [{ role: "system", content: systemPrompt }, ...convertToOpenAiMessages(messages)],
-			stream: true,
-			stream_options: { include_usage: true },
+			id,
+			info: {
+				...info,
+				defaultTemperature: defaultTemp,
+			},
+			temperature: this.supportsTemperature(id) ? (this.options.modelTemperature ?? defaultTemp) : undefined,
 		}
 	}
 
-	override async *createMessage(systemPrompt: string, messages: Anthropic.Messages.MessageParam[]): ApiStream {
-		const model = this.getModel()
+	protected override getLanguageModel(): LanguageModel {
+		const { id } = this.getModel()
+		return this.provider(id)
+	}
+
+	protected override getMaxOutputTokens(): number | undefined {
+		const { id, info } = this.getModel()
+		return (
+			getModelMaxOutputTokens({
+				modelId: id,
+				model: info,
+				settings: this.options,
+				format: "openai",
+			}) ?? undefined
+		)
+	}
+
+	private supportsTemperature(modelId: string): boolean {
+		return !modelId.startsWith("openai/o3-mini")
+	}
+
+	override async *createMessage(
+		systemPrompt: string,
+		messages: Anthropic.Messages.MessageParam[],
+		metadata?: ApiHandlerCreateMessageMetadata,
+	): ApiStream {
+		const model = await this.fetchModel()
 
 		if (model.id.includes("DeepSeek-R1")) {
-			const stream = await this.client.chat.completions.create({
-				...this.getCompletionParams(systemPrompt, messages),
-				messages: convertToR1Format([{ role: "user", content: systemPrompt }, ...messages]),
-			})
+			yield* this.createR1Message(systemPrompt, messages, model, metadata)
+		} else {
+			yield* super.createMessage(systemPrompt, messages, metadata)
+		}
+	}
 
-			const matcher = new XmlMatcher(
-				"think",
-				(chunk) =>
-					({
-						type: chunk.matched ? "reasoning" : "text",
-						text: chunk.data,
-					}) as const,
-			)
+	private async *createR1Message(
+		systemPrompt: string,
+		messages: Anthropic.Messages.MessageParam[],
+		model: { id: string; info: ModelInfo },
+		metadata?: ApiHandlerCreateMessageMetadata,
+	): ApiStream {
+		const languageModel = this.getLanguageModel()
 
-			for await (const chunk of stream) {
-				const delta = chunk.choices[0]?.delta
+		const modifiedMessages = [...messages] as Anthropic.Messages.MessageParam[]
 
-				if (delta?.content) {
-					for (const processedChunk of matcher.update(delta.content)) {
+		if (modifiedMessages.length > 0 && modifiedMessages[0].role === "user") {
+			const first = modifiedMessages[0]
+			if (typeof first.content === "string") {
+				modifiedMessages[0] = { role: "user", content: `${systemPrompt}\n\n${first.content}` }
+			} else {
+				modifiedMessages[0] = {
+					role: "user",
+					content: [{ type: "text", text: systemPrompt }, ...first.content],
+				}
+			}
+		} else {
+			modifiedMessages.unshift({ role: "user", content: systemPrompt })
+		}
+
+		const aiSdkMessages = convertToAiSdkMessages(modifiedMessages)
+
+		const openAiTools = this.convertToolsForOpenAI(metadata?.tools)
+		const aiSdkTools = convertToolsForAiSdk(openAiTools) as ToolSet | undefined
+
+		const maxOutputTokens =
+			getModelMaxOutputTokens({
+				modelId: model.id,
+				model: model.info,
+				settings: this.options,
+				format: "openai",
+			}) ?? undefined
+
+		const temperature = this.supportsTemperature(model.id)
+			? (this.options.modelTemperature ?? model.info.defaultTemperature)
+			: undefined
+
+		const result = streamText({
+			model: languageModel,
+			messages: aiSdkMessages,
+			temperature,
+			maxOutputTokens,
+			tools: aiSdkTools,
+			toolChoice: mapToolChoice(metadata?.tool_choice),
+		})
+
+		const matcher = new TagMatcher(
+			"think",
+			(chunk) =>
+				({
+					type: chunk.matched ? "reasoning" : "text",
+					text: chunk.data,
+				}) as const,
+		)
+
+		try {
+			for await (const part of result.fullStream) {
+				if (part.type === "text-delta") {
+					for (const processedChunk of matcher.update(part.text)) {
 						yield processedChunk
 					}
-				}
-
-				if (chunk.usage) {
-					yield {
-						type: "usage",
-						inputTokens: chunk.usage.prompt_tokens || 0,
-						outputTokens: chunk.usage.completion_tokens || 0,
+				} else {
+					for (const chunk of processAiSdkStreamPart(part)) {
+						yield chunk
 					}
 				}
 			}
 
-			// Process any remaining content
 			for (const processedChunk of matcher.final()) {
 				yield processedChunk
 			}
-		} else {
-			yield* super.createMessage(systemPrompt, messages)
+
+			const usage = await result.usage
+			if (usage) {
+				yield this.processUsageMetrics(usage)
+			}
+		} catch (error) {
+			throw handleAiSdkError(error, "chutes")
 		}
 	}
 
-	override getModel() {
-		const model = super.getModel()
+	override async completePrompt(prompt: string): Promise<string> {
+		const model = await this.fetchModel()
+		const languageModel = this.getLanguageModel()
+
+		const maxOutputTokens =
+			getModelMaxOutputTokens({
+				modelId: model.id,
+				model: model.info,
+				settings: this.options,
+				format: "openai",
+			}) ?? undefined
+
 		const isDeepSeekR1 = model.id.includes("DeepSeek-R1")
-		return {
-			...model,
-			info: {
-				...model.info,
-				temperature: isDeepSeekR1 ? DEEP_SEEK_DEFAULT_TEMPERATURE : this.defaultTemperature,
-			},
+		const defaultTemperature = isDeepSeekR1 ? DEEP_SEEK_DEFAULT_TEMPERATURE : 0.5
+		const temperature = this.supportsTemperature(model.id)
+			? (this.options.modelTemperature ?? defaultTemperature)
+			: undefined
+
+		try {
+			const { text } = await generateText({
+				model: languageModel,
+				prompt,
+				maxOutputTokens,
+				temperature,
+			})
+			return text
+		} catch (error) {
+			if (error instanceof Error) {
+				throw new Error(`Chutes completion error: ${error.message}`)
+			}
+			throw error
 		}
 	}
 }

@@ -96,7 +96,7 @@ describe("File-Based Custom System Prompt", () => {
 			const prompt = await SYSTEM_PROMPT(
 				mockContext,
 				"test/path", // Using a relative path without leading slash
-				false, // supportsComputerUse
+				false, // supportsImages
 				undefined, // mcpHub
 				undefined, // diffStrategy
 				undefined, // browserViewportSize
@@ -104,9 +104,7 @@ describe("File-Based Custom System Prompt", () => {
 				customModePrompts, // customModePrompts
 				undefined, // customModes
 				undefined, // globalCustomInstructions
-				undefined, // diffEnabled
 				undefined, // experiments
-				true, // enableMcpServerCreation
 				undefined, // language
 				undefined, // rooIgnoreInstructions
 				undefined, // partialReadsEnabled
@@ -134,7 +132,7 @@ describe("File-Based Custom System Prompt", () => {
 		const prompt = await SYSTEM_PROMPT(
 			mockContext,
 			"test/path", // Using a relative path without leading slash
-			false, // supportsComputerUse
+			false, // supportsImages
 			undefined, // mcpHub
 			undefined, // diffStrategy
 			undefined, // browserViewportSize
@@ -142,9 +140,7 @@ describe("File-Based Custom System Prompt", () => {
 			undefined, // customModePrompts
 			undefined, // customModes
 			undefined, // globalCustomInstructions
-			undefined, // diffEnabled
 			undefined, // experiments
-			true, // enableMcpServerCreation
 			undefined, // language
 			undefined, // rooIgnoreInstructions
 			undefined, // partialReadsEnabled
@@ -180,7 +176,7 @@ describe("File-Based Custom System Prompt", () => {
 		const prompt = await SYSTEM_PROMPT(
 			mockContext,
 			"test/path", // Using a relative path without leading slash
-			false, // supportsComputerUse
+			false, // supportsImages
 			undefined, // mcpHub
 			undefined, // diffStrategy
 			undefined, // browserViewportSize
@@ -188,9 +184,7 @@ describe("File-Based Custom System Prompt", () => {
 			customModePrompts, // customModePrompts
 			undefined, // customModes
 			undefined, // globalCustomInstructions
-			undefined, // diffEnabled
 			undefined, // experiments
-			true, // enableMcpServerCreation
 			undefined, // language
 			undefined, // rooIgnoreInstructions
 			undefined, // partialReadsEnabled

@@ -55,4 +55,4 @@ export const featherlessModels = {
 	},
 } as const satisfies Record<string, ModelInfo>
 
-export const featherlessDefaultModelId: FeatherlessModelId = "deepseek-ai/DeepSeek-R1-0528"
+export const featherlessDefaultModelId: FeatherlessModelId = "moonshotai/Kimi-K2-Instruct"

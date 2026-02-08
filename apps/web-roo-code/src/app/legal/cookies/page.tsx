@@ -1,10 +1,11 @@
 import type { Metadata } from "next"
 import { SEO } from "@/lib/seo"
+import { ogImageUrl } from "@/lib/og"
 
-const TITLE = "Cookie Policy"
+const TITLE = "Our Cookie Policy"
 const DESCRIPTION = "Learn about how Roo Code uses cookies to enhance your experience and provide our services."
+const OG_DESCRIPTION = ""
 const PATH = "/legal/cookies"
-const OG_IMAGE = SEO.ogImage
 
 export const metadata: Metadata = {
 	title: TITLE,
@@ -19,10 +20,10 @@ export const metadata: Metadata = {
 		siteName: SEO.name,
 		images: [
 			{
-				url: OG_IMAGE.url,
-				width: OG_IMAGE.width,
-				height: OG_IMAGE.height,
-				alt: OG_IMAGE.alt,
+				url: ogImageUrl(TITLE, OG_DESCRIPTION),
+				width: 1200,
+				height: 630,
+				alt: TITLE,
 			},
 		],
 		locale: SEO.locale,
@@ -32,7 +33,7 @@ export const metadata: Metadata = {
 		card: SEO.twitterCard,
 		title: TITLE,
 		description: DESCRIPTION,
-		images: [OG_IMAGE.url],
+		images: [ogImageUrl(TITLE, OG_DESCRIPTION)],
 	},
 	keywords: [...SEO.keywords, "cookies", "privacy", "tracking", "analytics"],
 }
@@ -99,6 +100,19 @@ export default function CookiePolicy() {
 									<td className="border border-border px-4 py-3">1 year</td>
 									<td className="border border-border px-4 py-3 font-mono text-sm">ph_*</td>
 								</tr>
+								<tr>
+									<td className="border border-border px-4 py-3 font-medium">HubSpot</td>
+									<td className="border border-border px-4 py-3">
+										Marketing automation and visitor tracking
+									</td>
+									<td className="border border-border px-4 py-3">
+										Analytics (only with your consent)
+									</td>
+									<td className="border border-border px-4 py-3">13 months</td>
+									<td className="border border-border px-4 py-3 font-mono text-sm">
+										hubspotutk, __hstc, __hssrc, __hssc
+									</td>
+								</tr>
 							</tbody>
 						</table>
 					</div>
@@ -121,6 +135,15 @@ export default function CookiePolicy() {
 							PostHog Privacy Policy
 						</a>
 					</p>
+					<p>
+						<a
+							href="https://legal.hubspot.com/privacy-policy"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="text-primary hover:underline">
+							HubSpot Privacy Policy
+						</a>
+					</p>
 
 					<h2 className="mt-12 text-2xl font-bold">Essential cookies</h2>
 					<p>
@@ -132,10 +155,10 @@ export default function CookiePolicy() {
 
 					<h2 className="mt-12 text-2xl font-bold">Analytics cookies</h2>
 					<p>
-						We use PostHog analytics cookies to understand how visitors interact with our website. This
-						helps us improve our services and user experience. Analytics cookies are placed only if you give
-						consent through our cookie banner. The lawful basis for processing these cookies is your
-						consent, which you can withdraw at any time.
+						We use PostHog and HubSpot analytics cookies to understand how visitors interact with our
+						website. This helps us improve our services, user experience, and marketing efforts. Analytics
+						cookies are placed only if you give consent through our cookie banner. The lawful basis for
+						processing these cookies is your consent, which you can withdraw at any time.
 					</p>
 
 					<h2 className="mt-12 text-2xl font-bold">Third-party services</h2>

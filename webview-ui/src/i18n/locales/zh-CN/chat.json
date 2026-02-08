@@ -26,14 +26,20 @@
 		"shareSuccessOrganization": "组织链接已复制到剪贴板",
 		"shareSuccessPublic": "公开链接已复制到剪贴板",
 		"openInCloud": "在 Roo Code Cloud 中打开任务",
-		"openInCloudIntro": "从任何地方继续监控或与 Roo 交互。扫描、点击或复制以打开。"
+		"openInCloudIntro": "从任何地方继续监控或与 Roo 交互。扫描、点击或复制以打开。",
+		"openApiHistory": "打开 API 历史",
+		"openUiHistory": "打开 UI 历史",
+		"backToParentTask": "父任务"
 	},
 	"unpin": "取消置顶",
 	"pin": "置顶",
 	"tokenProgress": {
 		"availableSpace": "可用: {{amount}}",
 		"tokensUsed": "已使用: {{used}} / {{total}}",
-		"reservedForResponse": "已保留: {{amount}}"
+		"reservedForResponse": "已保留: {{amount}}",
+		"tokensUsedLabel": "已使用 Token",
+		"reservedForResponseLabel": "为回复保留",
+		"availableSpaceLabel": "可用空间"
 	},
 	"retry": {
 		"title": "重试",
@@ -84,32 +90,33 @@
 		"title": "取消",
 		"tooltip": "取消当前操作"
 	},
+	"stop": {
+		"title": "停止",
+		"tooltip": "停止当前任务"
+	},
+	"enqueueMessage": "将消息加入队列（当前任务完成后发送）",
 	"scrollToBottom": "滚动到聊天底部",
-	"about": "通过 AI 辅助生成、重构和调试代码。查看我们的 <DocsLink>文档</DocsLink> 了解更多信息。",
-	"onboarding": "<strong>此工作区中的任务列表为空。</strong> 请在下方输入任务开始。 不确定如何开始？ 在 <DocsLink>文档</DocsLink> 中阅读更多关于 Roo 可以为您做什么的信息。",
+	"about": "Roo Code 是您编辑器中的整个 AI 开发团队。",
+	"docs": "查看我们的 <DocsLink>文档</DocsLink> 了解更多信息。",
+	"onboarding": "此工作区中的任务列表为空。",
 	"rooTips": {
-		"boomerangTasks": {
-			"title": "任务编排",
-			"description": "将任务拆分为更小、更易于管理的部分。"
-		},
-		"stickyModels": {
-			"title": "粘性模式",
-			"description": "每个模式 都会记住 您上次使用的模型"
-		},
-		"tools": {
-			"title": "工具",
-			"description": "允许 AI 通过浏览网络、运行命令等方式解决问题。"
-		},
 		"customizableModes": {
-			"title": "自定义模式",
-			"description": "具有专属行为和指定模型的特定角色"
+			"title": "可自定义模式",
+			"description": "专注任务并交付成果的专业角色。"
+		},
+		"modelAgnostic": {
+			"title": "自带模型",
+			"description": "使用您自己的提供商密钥，甚至可以在本地运行推理 — 无加价，无锁定，无限制"
 		}
 	},
 	"selectMode": "选择交互模式",
 	"selectApiConfig": "选择 API 配置",
+	"lockApiConfigAcrossModes": "锁定此工作区所有模式的 API 配置",
+	"unlockApiConfigAcrossModes": "此工作区所有模式的 API 配置已锁定（点击解锁）",
 	"enhancePrompt": "增强提示词",
 	"addImages": "添加图片到消息",
 	"sendMessage": "发送消息",
+	"pressToSend": "按 {{keyCombination}} 发送",
 	"stopTts": "停止文本转语音",
 	"typeMessage": "输入消息...",
 	"typeTask": "在此处输入您的任务...",
@@ -141,13 +148,31 @@
 		"failed": "API请求失败",
 		"streaming": "API请求...",
 		"cancelled": "API请求已取消",
-		"streamingFailed": "API流式传输失败"
+		"streamingFailed": "API流式传输失败",
+		"rateLimitWait": "请求频率限制",
+		"errorTitle": "提供商错误 {{code}}",
+		"errorMessage": {
+			"400": "提供商无法按此方式处理请求。请停止任务并尝试不同方法。",
+			"401": "无法向提供商进行身份验证。请检查您的 API 密钥配置。",
+			"402": "您的账户余额/积分似乎已用尽。请前往提供商处充值以继续。",
+			"403": "无权限。您的 API 密钥有效，但提供商拒绝完成此请求。",
+			"429": "请求过于频繁。提供商已对您的请求进行速率限制。请在下一次 API 调用前稍候。",
+			"500": "提供商服务器错误。提供商端出现问题，您的请求无问题。",
+			"docs": "文档",
+			"goToSettings": "设置",
+			"unknown": "未知 API 错误。请联系 Roo Code 支持。",
+			"connection": "连接错误。确保您有可用的互联网连接。",
+			"claudeCodeNotAuthenticated": "你需要登录才能使用 Claude Code。前往设置并点击「登录到 Claude Code」进行身份验证。"
+		}
 	},
 	"checkpoint": {
 		"regular": "检查点",
 		"initializingWarning": "正在初始化检查点...如果耗时过长，你可以在<settingsLink>设置</settingsLink>中禁用检查点并重新启动任务。",
 		"menu": {
 			"viewDiff": "查看差异",
+			"more": "更多选项",
+			"viewDiffFromInit": "查看所有更改",
+			"viewDiffWithCurrent": "查看自此检查点以来的更改",
 			"restore": "恢复检查点",
 			"restoreFiles": "恢复文件",
 			"restoreFilesDescription": "将项目文件恢复到此检查点状态",
@@ -188,8 +213,6 @@
 		"didViewTopLevel": "已查看目录文件列表",
 		"wantsToViewRecursive": "需要查看目录所有文件",
 		"didViewRecursive": "已查看目录所有文件",
-		"wantsToViewDefinitions": "Roo想查看此目录中使用的源代码定义名称",
-		"didViewDefinitions": "Roo已查看此目录中使用的源代码定义名称",
 		"wantsToSearch": "需要搜索内容: {{regex}}",
 		"didSearch": "已完成内容搜索: {{regex}}",
 		"wantsToSearchOutsideWorkspace": "需要搜索内容（工作区外）: {{regex}}",
@@ -197,9 +220,7 @@
 		"wantsToViewTopLevelOutsideWorkspace": "需要查看目录文件列表（工作区外）",
 		"didViewTopLevelOutsideWorkspace": "已查看目录文件列表（工作区外）",
 		"wantsToViewRecursiveOutsideWorkspace": "需要查看目录所有文件（工作区外）",
-		"didViewRecursiveOutsideWorkspace": "已查看目录所有文件（工作区外）",
-		"wantsToViewDefinitionsOutsideWorkspace": "Roo想查看此目录中使用的源代码定义名称（工作区外）",
-		"didViewDefinitionsOutsideWorkspace": "Roo已查看此目录中使用的源代码定义名称（工作区外）"
+		"didViewRecursiveOutsideWorkspace": "已查看目录所有文件（工作区外）"
 	},
 	"commandOutput": "命令输出",
 	"commandExecution": {
@@ -221,6 +242,9 @@
 	},
 	"response": "响应",
 	"arguments": "参数",
+	"text": {
+		"rooSaid": "Roo 说"
+	},
 	"feedback": {
 		"youSaid": "你说"
 	},
@@ -241,12 +265,28 @@
 		"completionContent": "子任务已完成",
 		"resultContent": "子任务结果",
 		"defaultResult": "请继续下一个任务。",
-		"completionInstructions": "子任务已完成！您可以查看结果并提出修改或下一步建议。如果一切正常，请确认以将结果返回给主任务。"
+		"completionInstructions": "子任务已完成！您可以查看结果并提出修改或下一步建议。如果一切正常，请确认以将结果返回给主任务。",
+		"goToSubtask": "查看任务"
 	},
 	"questions": {
 		"hasQuestion": "Roo有一个问题"
 	},
 	"taskCompleted": "任务完成",
+	"modelResponseIncomplete": "模型响应不完整",
+	"modelResponseErrors": {
+		"noToolsUsed": "模型在响应中未使用任何工具。这通常发生在模型仅提供文本/推理而未调用完成任务所需的工具时。",
+		"noToolsUsedDetails": "模型提供了文本/推理，但未调用任何必需的工具。这通常表明模型误解了任务，或在确定使用哪个工具时遇到困难。系统已自动提示模型使用正确的工具重试。",
+		"noAssistantMessages": "模型未提供任何响应内容。这可能表示 API 或模型输出存在问题。",
+		"noAssistantMessagesDetails": "语言模型返回了一个没有任何文本或工具调用的空响应。这可能是由于 API 问题、速率限制或模型特定问题所导致。系统已自动提示模型重试。"
+	},
+	"errorDetails": {
+		"link": "详情",
+		"title": "错误详情",
+		"copyToClipboard": "复制到剪贴板",
+		"copied": "已复制!",
+		"diagnostics": "获取详细错误信息",
+		"proxyProvider": "看起来你在使用基于代理的提供商。请检查日志并确保它不会重写 Roo 的请求。"
+	},
 	"powershell": {
 		"issues": "看起来您遇到了Windows PowerShell问题，请参阅此"
 	},
@@ -254,6 +294,7 @@
 		"tooltipManage": "管理自动批准设置",
 		"tooltipStatus": "自动批准已启用：{{toggles}}",
 		"title": "自动批准",
+		"toggle": "切换自动批准",
 		"all": "全部",
 		"none": "无",
 		"description": "无需请求权限即可执行这些操作。仅对您完全信任的操作启用此功能。",
@@ -261,38 +302,70 @@
 		"toggleAriaLabel": "切换自动批准",
 		"disabledAriaLabel": "自动批准已禁用 - 请先选择选项",
 		"triggerLabelOff": "自动批准已关闭",
+		"triggerLabelOffShort": "关闭",
 		"triggerLabel_zero": "0 个自动批准",
 		"triggerLabel_one": "1 个自动批准",
 		"triggerLabel_other": "{{count}} 个自动批准",
-		"triggerLabelAll": "YOLO"
+		"triggerLabelAll": "BRRR"
 	},
 	"reasoning": {
 		"thinking": "思考中",
 		"seconds": "{{count}}秒"
 	},
-	"contextCondense": {
-		"title": "上下文已压缩",
-		"condensing": "正在压缩上下文...",
-		"errorHeader": "上下文压缩失败",
-		"tokens": "tokens"
+	"contextManagement": {
+		"tokens": "Token",
+		"condensation": {
+			"title": "上下文已压缩",
+			"inProgress": "正在压缩上下文...",
+			"errorHeader": "上下文压缩失败"
+		},
+		"truncation": {
+			"title": "上下文已截断",
+			"inProgress": "正在截断上下文...",
+			"messagesRemoved": "已移除 {{count}} 条消息",
+			"messagesRemoved_other": "已移除 {{count}} 条消息",
+			"description": "为保持在上下文窗口限制内，已从对话中移除较旧的消息。与压缩相比，这是一种快速但上下文保留较少的方法。"
+		}
+	},
+	"skill": {
+		"wantsToLoad": "Roo 想要加载技能",
+		"didLoad": "Roo 加载了技能"
 	},
 	"followUpSuggest": {
 		"copyToInput": "复制到输入框（或按住Shift点击）",
-		"autoSelectCountdown": "{{count}}秒后自动选择",
-		"countdownDisplay": "{{count}}秒"
+		"timerPrefix": "自动批准已启用。{{seconds}}秒后选择中…"
 	},
 	"announcement": {
-		"title": "🎉 Roo Code {{version}} 已发布",
+		"title": "Roo Code {{version}} 已发布",
+		"support": "请在 <githubLink>GitHub</githubLink> 上为我们点星支持 Roo Code。",
 		"stealthModel": {
-			"feature": "<bold>限时免费隐形模型</bold> - Code Supernova：一个支持图像输入的多功能代理编程模型，通过 Roo Code Cloud 提供。",
+			"feature": "<bold>限时免费隐形模型</bold> - Code Supernova：现已升级为 <bold>1M Token 上下文窗口</bold>！一个支持图像输入的多功能代理编程模型，通过 Roo Code Cloud 提供。",
 			"note": "(注意：提示词和补全内容会被模型创建者记录并用于改进模型)",
 			"connectButton": "连接到 Roo Code Cloud",
 			"selectModel": "在设置中从 Roo Code Cloud 提供商选择 <code>roo/code-supernova</code> 开始使用。",
 			"goToSettingsButton": "前往设置"
 		},
-		"socialLinks": "在 <xLink>X</xLink>、<discordLink>Discord</discordLink> 或 <redditLink>r/RooCode</redditLink> 上关注我们 🚀"
+		"release": {
+			"heading": "新增功能：",
+			"claudeOpus": "Claude Opus 4.6: 现已在所有供应商——Roo Code Router、Anthropic、AWS Bedrock、Google Vertex 和 OpenRouter——提供，将 Anthropic 最强大的模型带到您的首选平台。",
+			"gptCodex": "GPT-5.3-Codex: OpenAI 最新的编码模型现已在 OpenAI - ChatGPT 供应商中支持，提供尖端的代码生成和理解。"
+		},
+		"cloudAgents": {
+			"heading": "云端新功能：",
+			"specialized": "推出 <bold>Explainer</bold>、<bold>Planner</bold> 和 <bold>Coder</bold> - 三个专业云代理来增强你的工作流程。",
+			"description": "代理在云端协同工作，可从网页或通过 Slack 触发。",
+			"tryButton": "试用云代理"
+		},
+		"careers": "此外，<careersLink>我们正在招聘！</careersLink>"
+	},
+	"costs": {
+		"totalWithSubtasks": "总成本（包括子任务）: ${{cost}}",
+		"total": "总成本: ${{cost}}",
+		"includesSubtasks": "包括子任务成本"
 	},
 	"browser": {
+		"session": "浏览器会话",
+		"active": "活动中",
 		"rooWantsToUse": "Roo想使用浏览器",
 		"consoleLogs": "控制台日志",
 		"noNewLogs": "(没有新日志)",
@@ -306,11 +379,25 @@
 		"sessionStarted": "浏览器会话已启动",
 		"actions": {
 			"title": "浏览器操作: ",
+			"launched": "浏览器已启动",
 			"launch": "访问 {{url}}",
+			"clicked": "点击位置: {{coordinate}}",
 			"click": "点击 ({{coordinate}})",
+			"typed": "输入: {{text}}",
 			"type": "输入 \"{{text}}\"",
+			"pressed": "已按 {{key}}",
+			"press": "按 {{key}}",
+			"scrolledDown": "已向下滚动",
 			"scrollDown": "向下滚动",
+			"scrolledUp": "已向上滚动",
 			"scrollUp": "向上滚动",
+			"hovered": "悬停位置: {{coordinate}}",
+			"hover": "悬停 ({{coordinate}})",
+			"resized": "大小已更改: {{size}}",
+			"resize": "调整大小为 {{size}}",
+			"screenshotSaved": "截图已保存",
+			"screenshot": "将截图保存到 {{path}}",
+			"closed": "浏览器已关闭",
 			"close": "关闭浏览器"
 		}
 	},
@@ -318,8 +405,6 @@
 		"tooltips": {
 			"expand": "展开代码块",
 			"collapse": "收起代码块",
-			"enable_wrap": "启用自动换行",
-			"disable_wrap": "禁用自动换行",
 			"copy_code": "复制代码"
 		}
 	},
@@ -411,5 +496,24 @@
 	"slashCommand": {
 		"wantsToRun": "Roo 想要运行斜杠命令",
 		"didRun": "Roo 运行了斜杠命令"
+	},
+	"todo": {
+		"partial": "已完成 {{completed}} / {{total}} 个待办事项",
+		"complete": "已完成 {{total}} 个待办事项",
+		"updated": "已更新待办事项列表",
+		"completed": "已完成",
+		"started": "已开始"
+	},
+	"tooManyTools": {
+		"title": "启用的工具过多",
+		"toolsPart_one": "{{count}} 个工具",
+		"toolsPart_other": "{{count}} 个工具",
+		"serversPart_one": "{{count}} 个 MCP 服务",
+		"serversPart_other": "{{count}} 个 MCP 服务",
+		"messageTemplate": "你通过 {{servers}} 启用了 {{tools}}。这么多数量会混淆模型并导致错误。建议将其保持在 {{threshold}} 以下。",
+		"openMcpSettings": "打开 MCP 设置"
+	},
+	"readCommandOutput": {
+		"title": "Roo read command output"
 	}
 }

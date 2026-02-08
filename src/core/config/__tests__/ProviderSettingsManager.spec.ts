@@ -57,17 +57,15 @@ describe("ProviderSettingsManager", () => {
 						default: {
 							config: {},
 							id: "default",
-							diffEnabled: true,
-							fuzzyMatchThreshold: 1.0,
 						},
 					},
 					modeApiConfigs: {},
 					migrations: {
 						rateLimitSecondsMigrated: true,
-						diffSettingsMigrated: true,
 						openAiHeadersMigrated: true,
 						consecutiveMistakeLimitMigrated: true,
 						todoListEnabledMigrated: true,
+						claudeCodeLegacySettingsMigrated: true,
 					},
 				}),
 			)
@@ -92,7 +90,6 @@ describe("ProviderSettingsManager", () => {
 					},
 					migrations: {
 						rateLimitSecondsMigrated: true,
-						diffSettingsMigrated: true,
 					},
 				}),
 			)
@@ -169,7 +166,6 @@ describe("ProviderSettingsManager", () => {
 					},
 					migrations: {
 						rateLimitSecondsMigrated: true,
-						diffSettingsMigrated: true,
 						openAiHeadersMigrated: true,
 						consecutiveMistakeLimitMigrated: false,
 					},
@@ -210,7 +206,6 @@ describe("ProviderSettingsManager", () => {
 					},
 					migrations: {
 						rateLimitSecondsMigrated: true,
-						diffSettingsMigrated: true,
 						openAiHeadersMigrated: true,
 						consecutiveMistakeLimitMigrated: true,
 						todoListEnabledMigrated: false,
@@ -227,6 +222,118 @@ describe("ProviderSettingsManager", () => {
 			expect(storedConfig.apiConfigs.test.todoListEnabled).toEqual(true)
 			expect(storedConfig.apiConfigs.existing.todoListEnabled).toEqual(false)
 			expect(storedConfig.migrations.todoListEnabledMigrated).toEqual(true)
+		})
+
+		it("should apply model migrations for all providers", async () => {
+			mockSecrets.get.mockResolvedValue(
+				JSON.stringify({
+					currentApiConfigName: "default",
+					apiConfigs: {
+						default: {
+							config: {},
+							id: "default",
+							apiProvider: "roo",
+							apiModelId: "roo/code-supernova", // Old model ID
+						},
+						test: {
+							apiProvider: "roo",
+							apiModelId: "roo/code-supernova", // Old model ID
+						},
+						existing: {
+							apiProvider: "roo",
+							apiModelId: "roo/code-supernova-1-million", // Already migrated
+						},
+						otherProvider: {
+							apiProvider: "anthropic",
+							apiModelId: "roo/code-supernova", // Should not be migrated (different provider)
+						},
+						noProvider: {
+							id: "no-provider",
+							apiModelId: "roo/code-supernova", // Should not be migrated (no provider)
+						},
+					},
+					migrations: {
+						rateLimitSecondsMigrated: true,
+						openAiHeadersMigrated: true,
+						consecutiveMistakeLimitMigrated: true,
+						todoListEnabledMigrated: true,
+					},
+				}),
+			)
+
+			await providerSettingsManager.initialize()
+
+			// Get the last call to store, which should contain the migrated config
+			const calls = mockSecrets.store.mock.calls
+			const storedConfig = JSON.parse(calls[calls.length - 1][1])
+
+			// Roo provider configs should be migrated
+			expect(storedConfig.apiConfigs.default.apiModelId).toEqual("roo/code-supernova-1-million")
+			expect(storedConfig.apiConfigs.test.apiModelId).toEqual("roo/code-supernova-1-million")
+			expect(storedConfig.apiConfigs.existing.apiModelId).toEqual("roo/code-supernova-1-million")
+
+			// Non-roo provider configs should not be migrated
+			expect(storedConfig.apiConfigs.otherProvider.apiModelId).toEqual("roo/code-supernova")
+			expect(storedConfig.apiConfigs.noProvider.apiModelId).toEqual("roo/code-supernova")
+		})
+
+		it("should apply model migrations every time, not just once", async () => {
+			// First load with old model
+			mockSecrets.get.mockResolvedValue(
+				JSON.stringify({
+					currentApiConfigName: "default",
+					apiConfigs: {
+						default: {
+							apiProvider: "roo",
+							apiModelId: "roo/code-supernova",
+							id: "default",
+						},
+					},
+					migrations: {
+						rateLimitSecondsMigrated: true,
+						openAiHeadersMigrated: true,
+						consecutiveMistakeLimitMigrated: true,
+						todoListEnabledMigrated: true,
+					},
+				}),
+			)
+
+			await providerSettingsManager.initialize()
+
+			// Verify migration happened
+			let calls = mockSecrets.store.mock.calls
+			let storedConfig = JSON.parse(calls[calls.length - 1][1])
+			expect(storedConfig.apiConfigs.default.apiModelId).toEqual("roo/code-supernova-1-million")
+
+			// Create a new instance to simulate another load
+			const newManager = new ProviderSettingsManager(mockContext)
+
+			// Somehow the model got reverted (e.g., manual edit, sync issue)
+			mockSecrets.get.mockResolvedValue(
+				JSON.stringify({
+					currentApiConfigName: "default",
+					apiConfigs: {
+						default: {
+							apiProvider: "roo",
+							apiModelId: "roo/code-supernova", // Old model again
+							id: "default",
+						},
+					},
+					migrations: {
+						rateLimitSecondsMigrated: true,
+						openAiHeadersMigrated: true,
+						consecutiveMistakeLimitMigrated: true,
+						todoListEnabledMigrated: true,
+					},
+				}),
+			)
+
+			await newManager.initialize()
+
+			// Verify migration happened again
+			calls = mockSecrets.store.mock.calls
+			storedConfig = JSON.parse(calls[calls.length - 1][1])
+			expect(storedConfig.apiConfigs.default.apiModelId).toEqual("roo/code-supernova-1-million")
 		})
 
 		it("should throw error if secrets storage fails", async () => {
@@ -449,7 +556,6 @@ describe("ProviderSettingsManager", () => {
 					apiConfigs: { default: {} },
 					migrations: {
 						rateLimitSecondsMigrated: true,
-						diffSettingsMigrated: true,
 						openAiHeadersMigrated: true,
 					},
 				}),
@@ -578,7 +684,6 @@ describe("ProviderSettingsManager", () => {
 					apiConfigs: { test: { apiProvider: "anthropic", id: "test-id" } },
 					migrations: {
 						rateLimitSecondsMigrated: true,
-						diffSettingsMigrated: true,
 						openAiHeadersMigrated: true,
 					},
 				}),
@@ -590,7 +695,54 @@ describe("ProviderSettingsManager", () => {
 			)
 		})
 
-		it("should remove invalid profiles during load", async () => {
+		it("should sanitize invalid/removed providers by resetting apiProvider to undefined", async () => {
+			// This tests the fix for the infinite loop issue when a provider is removed
+			const configWithRemovedProvider = {
+				currentApiConfigName: "valid",
+				apiConfigs: {
+					valid: {
+						apiProvider: "anthropic",
+						apiKey: "valid-key",
+						apiModelId: "claude-3-opus-20240229",
+						id: "valid-id",
+					},
+					removedProvider: {
+						// Provider that was removed from the extension (e.g., "invalid-removed-provider")
+						id: "removed-id",
+						apiProvider: "invalid-removed-provider",
+						apiKey: "some-key",
+						apiModelId: "some-model",
+					},
+				},
+				migrations: {
+					rateLimitSecondsMigrated: true,
+					openAiHeadersMigrated: true,
+					consecutiveMistakeLimitMigrated: true,
+					todoListEnabledMigrated: true,
+				},
+			}
+
+			mockSecrets.get.mockResolvedValue(JSON.stringify(configWithRemovedProvider))
+
+			await providerSettingsManager.initialize()
+
+			const storeCalls = mockSecrets.store.mock.calls
+			expect(storeCalls.length).toBeGreaterThan(0)
+			const finalStoredConfigJson = storeCalls[storeCalls.length - 1][1]
+
+			const storedConfig = JSON.parse(finalStoredConfigJson)
+			// The valid provider should be untouched
+			expect(storedConfig.apiConfigs.valid).toBeDefined()
+			expect(storedConfig.apiConfigs.valid.apiProvider).toBe("anthropic")
+
+			// The config with the removed provider should have its apiProvider reset to undefined
+			// but still be present (not filtered out entirely)
+			expect(storedConfig.apiConfigs.removedProvider).toBeDefined()
+			expect(storedConfig.apiConfigs.removedProvider.apiProvider).toBeUndefined()
+			expect(storedConfig.apiConfigs.removedProvider.id).toBe("removed-id")
+		})
+
+		it("should sanitize invalid providers and remove non-object profiles during load", async () => {
 			const invalidConfig = {
 				currentApiConfigName: "valid",
 				apiConfigs: {
@@ -600,12 +752,12 @@ describe("ProviderSettingsManager", () => {
 						apiModelId: "claude-3-opus-20240229",
 						rateLimitSeconds: 0,
 					},
-					invalid: {
-						// Invalid API provider.
+					invalidProvider: {
+						// Invalid API provider - should be sanitized (kept but apiProvider reset to undefined)
 						id: "x.ai",
 						apiProvider: "x.ai",
 					},
-					// Incorrect type.
+					// Incorrect type - should be completely removed
 					anotherInvalid: "not an object",
 				},
 				migrations: {
@@ -622,10 +774,19 @@ describe("ProviderSettingsManager", () => {
 			const finalStoredConfigJson = storeCalls[storeCalls.length - 1][1]
 
 			const storedConfig = JSON.parse(finalStoredConfigJson)
+			// Valid config should be untouched
 			expect(storedConfig.apiConfigs.valid).toBeDefined()
-			expect(storedConfig.apiConfigs.invalid).toBeUndefined()
+			expect(storedConfig.apiConfigs.valid.apiProvider).toBe("anthropic")
+
+			// Invalid provider config should be sanitized - kept but apiProvider reset to undefined
+			expect(storedConfig.apiConfigs.invalidProvider).toBeDefined()
+			expect(storedConfig.apiConfigs.invalidProvider.apiProvider).toBeUndefined()
+			expect(storedConfig.apiConfigs.invalidProvider.id).toBe("x.ai")
+
+			// Non-object config should be completely removed
 			expect(storedConfig.apiConfigs.anotherInvalid).toBeUndefined()
-			expect(Object.keys(storedConfig.apiConfigs)).toEqual(["valid"])
+
+			expect(Object.keys(storedConfig.apiConfigs)).toEqual(["valid", "invalidProvider"])
 			expect(storedConfig.currentApiConfigName).toBe("valid")
 		})
 	})

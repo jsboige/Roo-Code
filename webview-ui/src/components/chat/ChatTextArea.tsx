@@ -1,12 +1,13 @@
 import React, { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useEvent } from "react-use"
 import DynamicTextArea from "react-textarea-autosize"
-import { VolumeX, Image, WandSparkles, SendHorizontal, MessageSquareX } from "lucide-react"
+import { VolumeX, Image, WandSparkles, SendHorizontal, X, ListEnd, Square } from "lucide-react"
+
+import type { ExtensionMessage } from "@roo-code/types"
 
 import { mentionRegex, mentionRegexGlobal, commandRegexGlobal, unescapeSpaces } from "@roo/context-mentions"
 import { WebviewMessage } from "@roo/WebviewMessage"
 import { Mode, getAllModes } from "@roo/modes"
-import { ExtensionMessage } from "@roo/ExtensionMessage"
 
 import { vscode } from "@src/utils/vscode"
 import { useExtensionState } from "@src/context/ExtensionStateContext"
@@ -31,6 +32,7 @@ import { MAX_IMAGES_PER_MESSAGE } from "./ChatView"
 import ContextMenu from "./ContextMenu"
 import { IndexingStatusBadge } from "./IndexingStatusBadge"
 import { usePromptHistory } from "./hooks/usePromptHistory"
+import { CloudAccountSwitcher } from "../cloud/CloudAccountSwitcher"
 
 interface ChatTextAreaProps {
 	inputValue: string
@@ -50,6 +52,13 @@ interface ChatTextAreaProps {
 	// Edit mode props
 	isEditMode?: boolean
 	onCancel?: () => void
+	// Browser session status
+	isBrowserSessionActive?: boolean
+	showBrowserDockToggle?: boolean
+	// Stop/Queue functionality
+	isStreaming?: boolean
+	onStop?: () => void
+	onEnqueueMessage?: () => void
 }
 
 export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
@@ -70,6 +79,11 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 			modeShortcutText,
 			isEditMode = false,
 			onCancel,
+			isBrowserSessionActive = false,
+			showBrowserDockToggle = false,
+			isStreaming = false,
+			onStop,
+			onEnqueueMessage,
 		},
 		ref,
 	) => {
@@ -87,6 +101,9 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 			taskHistory,
 			clineMessages,
 			commands,
+			cloudUserInfo,
+			enterBehavior,
+			lockApiConfigAcrossModes,
 		} = useExtensionState()
 
 		// Find the ID and display text for the currently selected API configuration.
@@ -245,10 +262,21 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 
 		const allModes = useMemo(() => getAllModes(customModes), [customModes])
 
-		// Memoized check for whether the input has content
+		// Memoized check for whether the input has content (text or images)
 		const hasInputContent = useMemo(() => {
-			return inputValue.trim().length > 0
-		}, [inputValue])
+			return inputValue.trim().length > 0 || selectedImages.length > 0
+		}, [inputValue, selectedImages])
+
+		// Compute the key combination text for the send button tooltip based on enterBehavior
+		const sendKeyCombination = useMemo(() => {
+			if (enterBehavior === "newline") {
+				// When Enter = newline, Ctrl/Cmd+Enter sends
+				const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0
+				return isMac ? "⌘+Enter" : "Ctrl+Enter"
+			}
+			// Default: Enter sends
+			return "Enter"
+		}, [enterBehavior])
 
 		const queryItems = useMemo(() => {
 			return [
@@ -465,12 +493,24 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 					return
 				}
 
-				if (event.key === "Enter" && !event.shiftKey && !isComposing) {
-					event.preventDefault()
-
-					// Always call onSend - let ChatView handle queueing when disabled
-					resetHistoryNavigation()
-					onSend()
+				// Handle Enter key based on enterBehavior setting
+				if (event.key === "Enter" && !isComposing) {
+					if (enterBehavior === "newline") {
+						// New behavior: Enter = newline, Shift+Enter or Ctrl+Enter = send
+						if (event.shiftKey || event.ctrlKey || event.metaKey) {
+							event.preventDefault()
+							resetHistoryNavigation()
+							onSend()
+						}
+						// Otherwise, let Enter create newline (don't preventDefault)
+					} else {
+						// Default behavior: Enter = send, Shift+Enter = newline
+						if (!event.shiftKey) {
+							event.preventDefault()
+							resetHistoryNavigation()
+							onSend()
+						}
+					}
 				}
 
 				if (event.key === "Backspace" && !isComposing) {
@@ -534,6 +574,7 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 				handleHistoryNavigation,
 				resetHistoryNavigation,
 				commands,
+				enterBehavior,
 			],
 		)
 
@@ -905,6 +946,11 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 			vscode.postMessage({ type: "loadApiConfigurationById", text: value })
 		}, [])
 
+		const handleToggleLockApiConfig = useCallback(() => {
+			const newValue = !lockApiConfigAcrossModes
+			vscode.postMessage({ type: "lockApiConfigAcrossModes", bool: newValue })
+		}, [lockApiConfigAcrossModes])
+
 		return (
 			<div
 				className={cn(
@@ -977,7 +1023,7 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 								"flex-col-reverse",
 								"min-h-0",
 								"overflow-hidden",
-								"rounded",
+								"rounded-lg",
 							)}>
 							<div
 								ref={highlightLayerRef}
@@ -1003,7 +1049,7 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 									isEditMode ? "pr-20" : "pr-9",
 									"z-10",
 									"forced-color-adjust-none",
-									"rounded",
+									"rounded-lg",
 								)}
 								style={{
 									color: "transparent",
@@ -1108,30 +1154,7 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 										<Image className="w-4 h-4" />
 									</button>
 								</StandardTooltip>
-								<StandardTooltip content={t("chat:enhancePrompt")}>
-									<button
-										aria-label={t("chat:enhancePrompt")}
-										disabled={false}
-										onClick={handleEnhancePrompt}
-										className={cn(
-											"relative inline-flex items-center justify-center",
-											"bg-transparent border-none p-1.5",
-											"rounded-md min-w-[28px] min-h-[28px]",
-											"text-vscode-descriptionForeground hover:text-vscode-foreground",
-											"transition-all duration-1000",
-											"cursor-pointer",
-											hasInputContent
-												? "opacity-50 hover:opacity-100 delay-750 pointer-events-auto"
-												: "opacity-0 pointer-events-none duration-200 delay-0",
-											hasInputContent &&
-												"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
-											"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
-											hasInputContent && "active:bg-[rgba(255,255,255,0.1)]",
-										)}>
-										<WandSparkles className={cn("w-4 h-4", isEnhancingPrompt && "animate-spin")} />
-									</button>
-								</StandardTooltip>
-								{isEditMode && (
+								{isEditMode ? (
 									<StandardTooltip content={t("chat:cancel.title")}>
 										<button
 											aria-label={t("chat:cancel.title")}
@@ -1148,31 +1171,101 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 												"active:bg-[rgba(255,255,255,0.1)]",
 												"cursor-pointer",
 											)}>
-											<MessageSquareX className="w-4 h-4" />
+											<X className="w-4 h-4" />
+										</button>
+									</StandardTooltip>
+								) : (
+									<StandardTooltip content={t("chat:enhancePrompt")}>
+										<button
+											aria-label={t("chat:enhancePrompt")}
+											disabled={false}
+											onClick={handleEnhancePrompt}
+											className={cn(
+												"relative inline-flex items-center justify-center",
+												"bg-transparent border-none p-1.5",
+												"rounded-md min-w-[28px] min-h-[28px]",
+												"text-vscode-descriptionForeground hover:text-vscode-foreground",
+												"transition-all duration-1000",
+												"cursor-pointer",
+												hasInputContent
+													? "opacity-50 hover:opacity-100 delay-750 pointer-events-auto"
+													: "opacity-0 pointer-events-none duration-200 delay-0",
+												hasInputContent &&
+													"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
+												"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
+												hasInputContent && "active:bg-[rgba(255,255,255,0.1)]",
+											)}>
+											<WandSparkles
+												className={cn("w-4 h-4", isEnhancingPrompt && "animate-spin")}
+											/>
 										</button>
 									</StandardTooltip>
 								)}
-								<StandardTooltip content={t("chat:sendMessage")}>
+								{/* Queue button - shown when streaming and user has typed content */}
+								{!isEditMode && isStreaming && hasInputContent && onEnqueueMessage && (
+									<StandardTooltip content={t("chat:enqueueMessage")}>
+										<button
+											aria-label={t("chat:enqueueMessage")}
+											disabled={false}
+											onClick={onEnqueueMessage}
+											className={cn(
+												"relative inline-flex items-center justify-center",
+												"bg-transparent border-none p-1.5",
+												"rounded-md min-w-[28px] min-h-[28px]",
+												"text-vscode-descriptionForeground hover:text-vscode-foreground",
+												"transition-all duration-200",
+												"opacity-100 hover:opacity-100 pointer-events-auto",
+												"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
+												"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
+												"active:bg-[rgba(255,255,255,0.1)]",
+												"cursor-pointer",
+											)}>
+											<ListEnd className="w-4 h-4" />
+										</button>
+									</StandardTooltip>
+								)}
+								{/* Send/Stop button - morphs based on streaming state, always visible in edit mode */}
+								<StandardTooltip
+									content={
+										isEditMode
+											? t("chat:pressToSend", { keyCombination: sendKeyCombination })
+											: isStreaming
+												? t("chat:stop.title")
+												: t("chat:pressToSend", { keyCombination: sendKeyCombination })
+									}>
 									<button
-										aria-label={t("chat:sendMessage")}
+										aria-label={
+											isEditMode
+												? t("chat:pressToSend", { keyCombination: sendKeyCombination })
+												: isStreaming
+													? t("chat:stop.title")
+													: t("chat:pressToSend", { keyCombination: sendKeyCombination })
+										}
 										disabled={false}
-										onClick={onSend}
+										onClick={isStreaming ? onStop : onSend}
 										className={cn(
 											"relative inline-flex items-center justify-center",
 											"bg-transparent border-none p-1.5",
-											"rounded-md min-w-[28px] min-h-[28px]",
+											"rounded-full min-w-[28px] min-h-[28px]",
 											"text-vscode-descriptionForeground hover:text-vscode-foreground",
 											"transition-all duration-200",
-											hasInputContent
+											isEditMode || isStreaming || hasInputContent
 												? "opacity-100 hover:opacity-100 pointer-events-auto"
 												: "opacity-0 pointer-events-none",
-											hasInputContent &&
+											(isEditMode || isStreaming || hasInputContent) &&
 												"hover:bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.15)]",
 											"focus:outline-none focus-visible:ring-1 focus-visible:ring-vscode-focusBorder",
-											hasInputContent && "active:bg-[rgba(255,255,255,0.1)]",
-											hasInputContent && "cursor-pointer",
+											(isEditMode || isStreaming || hasInputContent) &&
+												"active:bg-[rgba(255,255,255,0.1)]",
+											(isEditMode || isStreaming || hasInputContent) && "cursor-pointer",
+											isStreaming &&
+												"bg-vscode-button-background hover:bg-vscode-button-background",
 										)}>
-										<SendHorizontal className="w-4 h-4" />
+										{isStreaming ? (
+											<Square className="size-4 stroke-none fill-vscode-button-foreground" />
+										) : (
+											<SendHorizontal className="size-4" />
+										)}
 									</button>
 								</StandardTooltip>
 							</div>
@@ -1229,10 +1322,16 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 							listApiConfigMeta={listApiConfigMeta || []}
 							pinnedApiConfigs={pinnedApiConfigs}
 							togglePinnedApiConfig={togglePinnedApiConfig}
+							lockApiConfigAcrossModes={!!lockApiConfigAcrossModes}
+							onToggleLockApiConfig={handleToggleLockApiConfig}
 						/>
 						<AutoApproveDropdown triggerClassName="min-w-[28px] text-ellipsis overflow-hidden flex-shrink" />
 					</div>
-					<div className="flex flex-shrink-0 items-center gap-0.5 pr-2">
+					<div
+						className={cn(
+							"flex flex-shrink-0 items-center gap-0.5 h-5 leading-none",
+							!isEditMode && cloudUserInfo ? "" : "pr-2",
+						)}>
 						{isTtsPlaying && (
 							<StandardTooltip content={t("chat:stopTts")}>
 								<button
@@ -1254,6 +1353,13 @@ export const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 							</StandardTooltip>
 						)}
 						{!isEditMode ? <IndexingStatusBadge /> : null}
+						{!isEditMode && cloudUserInfo && <CloudAccountSwitcher />}
+						{/* keep props referenced after moving browser button */}
+						<div
+							className="hidden"
+							data-browser-session-active={isBrowserSessionActive}
+							data-show-browser-dock-toggle={showBrowserDockToggle}
+						/>
 					</div>
 				</div>
 			</div>

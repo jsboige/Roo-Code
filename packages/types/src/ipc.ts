@@ -45,6 +45,10 @@ export enum TaskCommandName {
 	CancelTask = "CancelTask",
 	CloseTask = "CloseTask",
 	ResumeTask = "ResumeTask",
+	SendMessage = "SendMessage",
+	GetCommands = "GetCommands",
+	GetModes = "GetModes",
+	GetModels = "GetModels",
 }
 
 /**
@@ -63,15 +67,29 @@ export const taskCommandSchema = z.discriminatedUnion("commandName", [
 	}),
 	z.object({
 		commandName: z.literal(TaskCommandName.CancelTask),
-		data: z.string(),
 	}),
 	z.object({
 		commandName: z.literal(TaskCommandName.CloseTask),
-		data: z.string(),
 	}),
 	z.object({
 		commandName: z.literal(TaskCommandName.ResumeTask),
 		data: z.string(),
+	}),
+	z.object({
+		commandName: z.literal(TaskCommandName.SendMessage),
+		data: z.object({
+			text: z.string().optional(),
+			images: z.array(z.string()).optional(),
+		}),
+	}),
+	z.object({
+		commandName: z.literal(TaskCommandName.GetCommands),
+	}),
+	z.object({
+		commandName: z.literal(TaskCommandName.GetModes),
+	}),
+	z.object({
+		commandName: z.literal(TaskCommandName.GetModels),
 	}),
 ])
 

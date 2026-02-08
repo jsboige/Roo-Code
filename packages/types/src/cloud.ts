@@ -94,31 +94,34 @@ export type OrganizationAllowList = z.infer<typeof organizationAllowListSchema>
 export const organizationDefaultSettingsSchema = globalSettingsSchema
 	.pick({
 		enableCheckpoints: true,
-		fuzzyMatchThreshold: true,
 		maxOpenTabsContext: true,
-		maxReadFileLine: true,
 		maxWorkspaceFiles: true,
 		showRooIgnoredFiles: true,
 		terminalCommandDelay: true,
-		terminalCompressProgressBar: true,
-		terminalOutputLineLimit: true,
 		terminalShellIntegrationDisabled: true,
 		terminalShellIntegrationTimeout: true,
 		terminalZshClearEolMark: true,
+		disabledTools: true,
 	})
 	// Add stronger validations for some fields.
 	.merge(
 		z.object({
 			maxOpenTabsContext: z.number().int().nonnegative().optional(),
-			maxReadFileLine: z.number().int().gte(-1).optional(),
 			maxWorkspaceFiles: z.number().int().nonnegative().optional(),
 			terminalCommandDelay: z.number().int().nonnegative().optional(),
-			terminalOutputLineLimit: z.number().int().nonnegative().optional(),
 			terminalShellIntegrationTimeout: z.number().int().nonnegative().optional(),
 		}),
 	)
 
 export type OrganizationDefaultSettings = z.infer<typeof organizationDefaultSettingsSchema>
+
+/**
+ * WorkspaceTaskVisibility
+ */
+
+const workspaceTaskVisibilitySchema = z.enum(["all", "list-only", "admins-and-creator", "creator", "full-lockdown"])
+
+export type WorkspaceTaskVisibility = z.infer<typeof workspaceTaskVisibilitySchema>
 
 /**
  * OrganizationCloudSettings
@@ -127,8 +130,11 @@ export type OrganizationDefaultSettings = z.infer<typeof organizationDefaultSett
 export const organizationCloudSettingsSchema = z.object({
 	recordTaskMessages: z.boolean().optional(),
 	enableTaskSharing: z.boolean().optional(),
+	allowPublicTaskSharing: z.boolean().optional(),
 	taskShareExpirationDays: z.number().int().positive().optional(),
 	allowMembersViewAllTasks: z.boolean().optional(),
+	workspaceTaskVisibility: workspaceTaskVisibilitySchema.optional(),
+	llmEnhancedFeaturesEnabled: z.boolean().optional(),
 })
 
 export type OrganizationCloudSettings = z.infer<typeof organizationCloudSettingsSchema>
@@ -174,6 +180,7 @@ export type UserFeatures = z.infer<typeof userFeaturesSchema>
 export const userSettingsConfigSchema = z.object({
 	extensionBridgeEnabled: z.boolean().optional(),
 	taskSyncEnabled: z.boolean().optional(),
+	llmEnhancedFeaturesEnabled: z.boolean().optional(),
 })
 
 export type UserSettingsConfig = z.infer<typeof userSettingsConfigSchema>
@@ -200,8 +207,10 @@ export const ORGANIZATION_DEFAULT: OrganizationSettings = {
 	cloudSettings: {
 		recordTaskMessages: true,
 		enableTaskSharing: true,
+		allowPublicTaskSharing: true,
 		taskShareExpirationDays: 30,
 		allowMembersViewAllTasks: true,
+		llmEnhancedFeaturesEnabled: false,
 	},
 	defaultSettings: {},
 	allowList: ORGANIZATION_ALLOW_ALL,
@@ -239,9 +248,15 @@ export interface AuthService extends EventEmitter<AuthServiceEvents> {
 	broadcast(): void
 
 	// Authentication methods
-	login(landingPageSlug?: string): Promise<void>
+	login(landingPageSlug?: string, useProviderSignup?: boolean): Promise<void>
 	logout(): Promise<void>
-	handleCallback(code: string | null, state: string | null, organizationId?: string | null): Promise<void>
+	handleCallback(
+		code: string | null,
+		state: string | null,
+		organizationId?: string | null,
+		providerModel?: string | null,
+	): Promise<void>
+	switchOrganization(organizationId: string | null): Promise<void>
 
 	// State methods
 	getState(): AuthState
@@ -253,6 +268,9 @@ export interface AuthService extends EventEmitter<AuthServiceEvents> {
 	getSessionToken(): string | undefined
 	getUserInfo(): CloudUserInfo | null
 	getStoredOrganizationId(): string | null
+
+	// Organization management
+	getOrganizationMemberships(): Promise<CloudOrganizationMembership[]>
 }
 
 /**
@@ -407,6 +425,7 @@ export const extensionInstanceSchema = z.object({
 	modes: z.array(z.object({ slug: z.string(), name: z.string() })).optional(),
 	providerProfile: z.string().optional(),
 	providerProfiles: z.array(z.object({ name: z.string(), provider: z.string().optional() })).optional(),
+	isCloudAgent: z.boolean().optional(),
 })
 
 export type ExtensionInstance = z.infer<typeof extensionInstanceSchema>
@@ -430,6 +449,9 @@ export enum ExtensionBridgeEventName {
 	TaskPaused = RooCodeEventName.TaskPaused,
 	TaskUnpaused = RooCodeEventName.TaskUnpaused,
 	TaskSpawned = RooCodeEventName.TaskSpawned,
+	TaskDelegated = RooCodeEventName.TaskDelegated,
+	TaskDelegationCompleted = RooCodeEventName.TaskDelegationCompleted,
+	TaskDelegationResumed = RooCodeEventName.TaskDelegationResumed,
 
 	TaskUserMessage = RooCodeEventName.TaskUserMessage,
 
@@ -507,6 +529,21 @@ export const extensionBridgeEventSchema = z.discriminatedUnion("type", [
 	}),
 	z.object({
 		type: z.literal(ExtensionBridgeEventName.TaskSpawned),
+		instance: extensionInstanceSchema,
+		timestamp: z.number(),
+	}),
+	z.object({
+		type: z.literal(ExtensionBridgeEventName.TaskDelegated),
+		instance: extensionInstanceSchema,
+		timestamp: z.number(),
+	}),
+	z.object({
+		type: z.literal(ExtensionBridgeEventName.TaskDelegationCompleted),
+		instance: extensionInstanceSchema,
+		timestamp: z.number(),
+	}),
+	z.object({
+		type: z.literal(ExtensionBridgeEventName.TaskDelegationResumed),
 		instance: extensionInstanceSchema,
 		timestamp: z.number(),
 	}),
@@ -717,3 +754,25 @@ export type LeaveResponse = {
 	taskId?: string
 	timestamp?: string
 }
+
+/**
+ * UsageStats
+ */
+
+export const usageStatsSchema = z.object({
+	success: z.boolean(),
+	data: z.object({
+		dates: z.array(z.string()), // Array of date strings
+		tasks: z.array(z.number()), // Array of task counts
+		tokens: z.array(z.number()), // Array of token counts
+		costs: z.array(z.number()), // Array of costs in USD
+		totals: z.object({
+			tasks: z.number(),
+			tokens: z.number(),
+			cost: z.number(), // Total cost in USD
+		}),
+	}),
+	period: z.number(), // Period in days (e.g., 30)
+})
+
+export type UsageStats = z.infer<typeof usageStatsSchema>

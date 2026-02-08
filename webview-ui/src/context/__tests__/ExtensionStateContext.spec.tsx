@@ -1,8 +1,11 @@
 import { render, screen, act } from "@/utils/test-utils"
 
-import { ProviderSettings, ExperimentId } from "@roo-code/types"
-
-import { ExtensionState } from "@roo/ExtensionMessage"
+import {
+	type ProviderSettings,
+	type ExperimentId,
+	type ExtensionState,
+	DEFAULT_CHECKPOINT_TIMEOUT_SECONDS,
+} from "@roo-code/types"
 
 import { ExtensionStateContextProvider, useExtensionState, mergeExtensionState } from "../ExtensionStateContext"
 
@@ -184,13 +187,11 @@ describe("mergeExtensionState", () => {
 		const baseState: ExtensionState = {
 			version: "",
 			mcpEnabled: false,
-			enableMcpServerCreation: false,
 			clineMessages: [],
 			taskHistory: [],
 			shouldShowAnnouncement: false,
 			enableCheckpoints: true,
 			writeDelayMs: 1000,
-			requestDelaySeconds: 5,
 			mode: "default",
 			experiments: {} as Record<ExperimentId, boolean>,
 			customModes: [],
@@ -199,14 +200,15 @@ describe("mergeExtensionState", () => {
 			apiConfiguration: { providerId: "openrouter" } as ProviderSettings,
 			telemetrySetting: "unset",
 			showRooIgnoredFiles: true,
+			enableSubfolderRules: false,
 			renderContext: "sidebar",
-			maxReadFileLine: 500,
 			cloudUserInfo: null,
 			organizationAllowList: { allowAll: true, providers: {} },
 			autoCondenseContext: true,
 			autoCondenseContextPercent: 100,
 			cloudIsAuthenticated: false,
 			sharingEnabled: false,
+			publicSharingEnabled: false,
 			profileThresholds: {},
 			hasOpenedModeSelector: false, // Add the new required property
 			maxImageFileSize: 5,
@@ -214,28 +216,27 @@ describe("mergeExtensionState", () => {
 			remoteControlEnabled: false,
 			taskSyncEnabled: false,
 			featureRoomoteControlEnabled: false,
+			isBrowserSessionActive: false,
+			checkpointTimeout: DEFAULT_CHECKPOINT_TIMEOUT_SECONDS, // Add the checkpoint timeout property
 		}
 
 		const prevState: ExtensionState = {
 			...baseState,
 			apiConfiguration: { modelMaxTokens: 1234, modelMaxThinkingTokens: 123 },
 			experiments: {} as Record<ExperimentId, boolean>,
+			checkpointTimeout: DEFAULT_CHECKPOINT_TIMEOUT_SECONDS - 5,
 		}
 
 		const newState: ExtensionState = {
 			...baseState,
 			apiConfiguration: { modelMaxThinkingTokens: 456, modelTemperature: 0.3 },
 			experiments: {
-				powerSteering: true,
-				marketplace: false,
-				disableCompletionCommand: false,
-				concurrentFileReads: true,
-				multiFileApplyDiff: true,
 				preventFocusDisruption: false,
-				newTaskRequireTodos: false,
 				imageGeneration: false,
 				runSlashCommand: false,
+				customTools: false,
 			} as Record<ExperimentId, boolean>,
+			checkpointTimeout: DEFAULT_CHECKPOINT_TIMEOUT_SECONDS + 5,
 		}
 
 		const result = mergeExtensionState(prevState, newState)
@@ -246,15 +247,10 @@ describe("mergeExtensionState", () => {
 		})
 
 		expect(result.experiments).toEqual({
-			powerSteering: true,
-			marketplace: false,
-			disableCompletionCommand: false,
-			concurrentFileReads: true,
-			multiFileApplyDiff: true,
 			preventFocusDisruption: false,
-			newTaskRequireTodos: false,
 			imageGeneration: false,
 			runSlashCommand: false,
+			customTools: false,
 		})
 	})
 })

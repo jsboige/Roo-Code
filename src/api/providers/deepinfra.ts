@@ -47,6 +47,7 @@ export class DeepInfraHandler extends RouterProvider implements SingleCompletion
 			modelId: id,
 			model: info,
 			settings: this.options,
+			defaultTemperature: 0,
 		})
 
 		return { id, info, ...params }
@@ -72,6 +73,9 @@ export class DeepInfraHandler extends RouterProvider implements SingleCompletion
 			stream_options: { include_usage: true },
 			reasoning_effort,
 			prompt_cache_key,
+			tools: this.convertToolsForOpenAI(_metadata?.tools),
+			tool_choice: _metadata?.tool_choice,
+			parallel_tool_calls: _metadata?.parallelToolCalls ?? true,
 		} as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming
 
 		if (this.supportsTemperature(modelId)) {
@@ -94,6 +98,19 @@ export class DeepInfraHandler extends RouterProvider implements SingleCompletion
 
 			if (delta && "reasoning_content" in delta && delta.reasoning_content) {
 				yield { type: "reasoning", text: (delta.reasoning_content as string | undefined) || "" }
+			}
+
+			// Handle tool calls in stream - emit partial chunks for NativeToolCallParser
+			if (delta?.tool_calls) {
+				for (const toolCall of delta.tool_calls) {
+					yield {
+						type: "tool_call_partial",
+						index: toolCall.index,
+						id: toolCall.id,
+						name: toolCall.function?.name,
+						arguments: toolCall.function?.arguments,
+					}
+				}
 			}
 
 			if (chunk.usage) {
@@ -131,9 +148,9 @@ export class DeepInfraHandler extends RouterProvider implements SingleCompletion
 		const cacheWriteTokens = usage?.prompt_tokens_details?.cache_write_tokens || 0
 		const cacheReadTokens = usage?.prompt_tokens_details?.cached_tokens || 0
 
-		const totalCost = modelInfo
+		const { totalCost } = modelInfo
 			? calculateApiCostOpenAI(modelInfo, inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens)
-			: 0
+			: { totalCost: 0 }
 
 		return {
 			type: "usage",

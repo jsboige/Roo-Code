@@ -17,13 +17,15 @@ export type ToolGroup = z.infer<typeof toolGroupsSchema>
 export const toolNames = [
 	"execute_command",
 	"read_file",
+	"read_command_output",
 	"write_to_file",
 	"apply_diff",
-	"insert_content",
 	"search_and_replace",
+	"search_replace",
+	"edit_file",
+	"apply_patch",
 	"search_files",
 	"list_files",
-	"list_code_definition_names",
 	"browser_action",
 	"use_mcp_tool",
 	"access_mcp_resource",
@@ -31,11 +33,12 @@ export const toolNames = [
 	"attempt_completion",
 	"switch_mode",
 	"new_task",
-	"fetch_instructions",
 	"codebase_search",
 	"update_todo_list",
 	"run_slash_command",
+	"skill",
 	"generate_image",
+	"custom_tool",
 ] as const
 
 export const toolNamesSchema = z.enum(toolNames)

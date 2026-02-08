@@ -26,14 +26,20 @@
 		"shareSuccessOrganization": "Lien d'organisation copié dans le presse-papiers",
 		"shareSuccessPublic": "Lien public copié dans le presse-papiers",
 		"openInCloud": "Ouvrir la tâche dans Roo Code Cloud",
-		"openInCloudIntro": "Continue à surveiller ou interagir avec Roo depuis n'importe où. Scanne, clique ou copie pour ouvrir."
+		"openInCloudIntro": "Continue à surveiller ou interagir avec Roo depuis n'importe où. Scanne, clique ou copie pour ouvrir.",
+		"openApiHistory": "Ouvrir l'historique de l'API",
+		"openUiHistory": "Ouvrir l'historique de l'UI",
+		"backToParentTask": "Tâche parente"
 	},
 	"unpin": "Désépingler",
 	"pin": "Épingler",
 	"tokenProgress": {
 		"availableSpace": "Espace disponible : {{amount}} tokens",
 		"tokensUsed": "Tokens utilisés : {{used}} sur {{total}}",
-		"reservedForResponse": "Réservé pour la réponse du modèle : {{amount}} tokens"
+		"reservedForResponse": "Réservé pour la réponse du modèle : {{amount}} tokens",
+		"tokensUsedLabel": "Tokens utilisés",
+		"reservedForResponseLabel": "Réservé pour la réponse",
+		"availableSpaceLabel": "Espace disponible"
 	},
 	"retry": {
 		"title": "Réessayer",
@@ -80,36 +86,37 @@
 		"title": "Terminer",
 		"tooltip": "Terminer la tâche actuelle"
 	},
+	"stop": {
+		"title": "Arrêter",
+		"tooltip": "Arrêter la tâche en cours"
+	},
 	"cancel": {
 		"title": "Annuler",
 		"tooltip": "Annuler l'opération actuelle"
 	},
+	"enqueueMessage": "Ajouter le message à la file d'attente (sera envoyé après la fin de la tâche en cours)",
 	"scrollToBottom": "Défiler jusqu'au bas du chat",
-	"about": "Générer, refactoriser et déboguer du code avec l'assistance de l'IA. Consultez notre <DocsLink>documentation</DocsLink> pour en savoir plus.",
-	"onboarding": "Grâce aux dernières avancées en matière de capacités de codage agent, je peux gérer des tâches complexes de développement logiciel étape par étape. Avec des outils qui me permettent de créer et d'éditer des fichiers, d'explorer des projets complexes, d'utiliser le navigateur et d'exécuter des commandes de terminal (après votre autorisation), je peux vous aider de manières qui vont au-delà de la complétion de code ou du support technique. Je peux même utiliser MCP pour créer de nouveaux outils et étendre mes propres capacités.",
+	"about": "Roo Code est une équipe complète de développeurs IA dans votre éditeur.",
+	"docs": "Consultez notre <DocsLink>documentation</DocsLink> pour en savoir plus.",
+	"onboarding": "Votre liste de tâches dans cet espace de travail est vide.",
 	"rooTips": {
-		"boomerangTasks": {
-			"title": "Orchestration de Tâches",
-			"description": "Divisez les tâches en parties plus petites et gérables."
-		},
-		"stickyModels": {
-			"title": "Modes persistants",
-			"description": "Chaque mode se souvient de votre dernier modèle utilisé"
-		},
-		"tools": {
-			"title": "Outils",
-			"description": "Permettez à l'IA de résoudre des problèmes en naviguant sur le Web, en exécutant des commandes, et plus encore."
-		},
 		"customizableModes": {
 			"title": "Modes personnalisables",
-			"description": "Des personas spécialisés avec leurs propres comportements et modèles assignés"
+			"description": "Des personas spécialisés qui restent concentrés sur la tâche et livrent des résultats."
+		},
+		"modelAgnostic": {
+			"title": "Apportez votre propre modèle",
+			"description": "Utilisez votre propre clé de fournisseur ou même exécutez une inférence locale — pas de majoration, pas de verrouillage, pas de restrictions"
 		}
 	},
 	"selectMode": "Sélectionner le mode d'interaction",
 	"selectApiConfig": "Sélectionner la configuration de l'API",
+	"lockApiConfigAcrossModes": "Verrouiller la configuration API pour tous les modes dans cet espace de travail",
+	"unlockApiConfigAcrossModes": "La configuration API est verrouillée pour tous les modes dans cet espace de travail (cliquer pour déverrouiller)",
 	"enhancePrompt": "Améliorer la requête avec un contexte supplémentaire",
 	"addImages": "Ajouter des images au message",
 	"sendMessage": "Envoyer le message",
+	"pressToSend": "Appuie sur {{keyCombination}} pour envoyer",
 	"stopTts": "Arrêter la synthèse vocale",
 	"typeMessage": "Écrivez un message...",
 	"typeTask": "Écrivez votre tâche ici...",
@@ -141,13 +148,31 @@
 		"failed": "Échec de la requête API",
 		"streaming": "Requête API...",
 		"cancelled": "Requête API annulée",
-		"streamingFailed": "Échec du streaming API"
+		"streamingFailed": "Échec du streaming API",
+		"rateLimitWait": "Limitation du débit",
+		"errorTitle": "Erreur du fournisseur {{code}}",
+		"errorMessage": {
+			"400": "Le fournisseur n'a pas pu traiter la demande telle que présentée. Arrête la tâche et essaie une approche différente.",
+			"401": "Impossible de s'authentifier auprès du fournisseur. Veuillez vérifier la configuration de votre clé API.",
+			"402": "Il semble que vous ayez épuisé vos fonds/crédits sur votre compte. Allez chez votre fournisseur et ajoutez-en plus pour continuer.",
+			"403": "Non autorisé. Votre clé API est valide, mais le fournisseur a refusé de compléter cette demande.",
+			"429": "Trop de demandes. Vous êtes limité par le fournisseur. Veuillez attendre un peu avant votre prochain appel API.",
+			"500": "Erreur du serveur du fournisseur. Quelque chose ne va pas du côté du fournisseur, il n'y a rien de mal avec votre demande.",
+			"docs": "Documentation",
+			"goToSettings": "Paramètres",
+			"unknown": "Erreur API inconnue. Veuillez contacter le support Roo Code.",
+			"connection": "Erreur de connexion. Assurez-vous que vous avez une connexion Internet fonctionnelle.",
+			"claudeCodeNotAuthenticated": "Vous devez vous connecter pour utiliser Claude Code. Allez dans les Paramètres et cliquez sur \"Se connecter à Claude Code\" pour vous authentifier."
+		}
 	},
 	"checkpoint": {
 		"regular": "Point de contrôle",
 		"initializingWarning": "Initialisation du point de contrôle en cours... Si cela prend trop de temps, tu peux désactiver les points de contrôle dans les <settingsLink>paramètres</settingsLink> et redémarrer ta tâche.",
 		"menu": {
 			"viewDiff": "Voir les différences",
+			"more": "Plus d'options",
+			"viewDiffFromInit": "Voir toutes les modifications",
+			"viewDiffWithCurrent": "Voir les modifications depuis ce point de contrôle",
 			"restore": "Restaurer le point de contrôle",
 			"restoreFiles": "Restaurer les fichiers",
 			"restoreFilesDescription": "Restaure les fichiers de votre projet à un instantané pris à ce moment.",
@@ -188,8 +213,6 @@
 		"didViewTopLevel": "Roo a vu les fichiers de premier niveau dans ce répertoire",
 		"wantsToViewRecursive": "Roo veut voir récursivement tous les fichiers dans ce répertoire",
 		"didViewRecursive": "Roo a vu récursivement tous les fichiers dans ce répertoire",
-		"wantsToViewDefinitions": "Roo veut voir les noms de définitions de code source utilisés dans ce répertoire",
-		"didViewDefinitions": "Roo a vu les noms de définitions de code source utilisés dans ce répertoire",
 		"wantsToSearch": "Roo veut rechercher dans ce répertoire <code>{{regex}}</code>",
 		"didSearch": "Roo a recherché dans ce répertoire <code>{{regex}}</code>",
 		"wantsToSearchOutsideWorkspace": "Roo veut rechercher dans ce répertoire (hors espace de travail) <code>{{regex}}</code>",
@@ -197,9 +220,7 @@
 		"wantsToViewTopLevelOutsideWorkspace": "Roo veut voir les fichiers de premier niveau dans ce répertoire (hors espace de travail)",
 		"didViewTopLevelOutsideWorkspace": "Roo a vu les fichiers de premier niveau dans ce répertoire (hors espace de travail)",
 		"wantsToViewRecursiveOutsideWorkspace": "Roo veut voir récursivement tous les fichiers dans ce répertoire (hors espace de travail)",
-		"didViewRecursiveOutsideWorkspace": "Roo a vu récursivement tous les fichiers dans ce répertoire (hors espace de travail)",
-		"wantsToViewDefinitionsOutsideWorkspace": "Roo veut voir les noms de définitions de code source utilisés dans ce répertoire (hors espace de travail)",
-		"didViewDefinitionsOutsideWorkspace": "Roo a vu les noms de définitions de code source utilisés dans ce répertoire (hors espace de travail)"
+		"didViewRecursiveOutsideWorkspace": "Roo a vu récursivement tous les fichiers dans ce répertoire (hors espace de travail)"
 	},
 	"commandOutput": "Sortie de la Commande",
 	"commandExecution": {
@@ -220,6 +241,9 @@
 	},
 	"response": "Réponse",
 	"arguments": "Arguments",
+	"text": {
+		"rooSaid": "Roo a dit"
+	},
 	"feedback": {
 		"youSaid": "Tu as dit"
 	},
@@ -240,12 +264,28 @@
 		"completionContent": "Sous-tâche terminée",
 		"resultContent": "Résultats de la sous-tâche",
 		"defaultResult": "Veuillez continuer avec la tâche suivante.",
-		"completionInstructions": "Sous-tâche terminée ! Vous pouvez examiner les résultats et suggérer des corrections ou les prochaines étapes. Si tout semble bon, confirmez pour retourner le résultat à la tâche parente."
+		"completionInstructions": "Sous-tâche terminée ! Vous pouvez examiner les résultats et suggérer des corrections ou les prochaines étapes. Si tout semble bon, confirmez pour retourner le résultat à la tâche parente.",
+		"goToSubtask": "Afficher la tâche"
 	},
 	"questions": {
 		"hasQuestion": "Roo a une question"
 	},
 	"taskCompleted": "Tâche terminée",
+	"modelResponseIncomplete": "Réponse du modèle incomplète",
+	"modelResponseErrors": {
+		"noToolsUsed": "Le modèle n'a utilisé aucun outil dans sa réponse. Cela se produit généralement lorsque le modèle fournit uniquement du texte/raisonnement sans appeler les outils nécessaires pour accomplir la tâche.",
+		"noToolsUsedDetails": "Le modèle a fourni du texte/raisonnement mais n'a appelé aucun des outils requis. Cela indique généralement que le modèle a mal compris la tâche ou a des difficultés à déterminer quel outil utiliser. Le modèle a été automatiquement invité à réessayer avec l'utilisation appropriée des outils.",
+		"noAssistantMessages": "Le modèle n'a fourni aucun contenu de réponse. Cela peut indiquer un problème avec l'API ou la sortie du modèle.",
+		"noAssistantMessagesDetails": "Le modèle de langage a renvoyé une réponse vide sans aucun texte ni appel d'outil. Cela peut se produire en raison de problèmes d'API, de limitation de débit ou de problèmes spécifiques au modèle. Le modèle a été automatiquement invité à réessayer."
+	},
+	"errorDetails": {
+		"link": "Détails",
+		"title": "Détails de l'erreur",
+		"copyToClipboard": "Copier dans le presse-papiers",
+		"copied": "Copié !",
+		"diagnostics": "Obtenir les détails de l'erreur",
+		"proxyProvider": "Il semble que tu utilises un fournisseur basé sur un proxy. Assure-toi de vérifier ses journaux et de t'assurer qu'il ne réécrit pas les demandes de Roo."
+	},
 	"powershell": {
 		"issues": "Il semble que vous rencontriez des problèmes avec Windows PowerShell, veuillez consulter ce"
 	},
@@ -253,6 +293,7 @@
 		"tooltipManage": "Gérer les paramètres d'approbation automatique",
 		"tooltipStatus": "Approbation automatique activée pour : {{toggles}}",
 		"title": "Approbation automatique",
+		"toggle": "Basculer l'approbation automatique",
 		"all": "Tout",
 		"none": "Aucun",
 		"description": "Exécutez ces actions sans demander la permission. N'activez cette option que pour les actions en lesquelles vous avez entièrement confiance.",
@@ -260,38 +301,70 @@
 		"toggleAriaLabel": "Basculer l'approbation automatique",
 		"disabledAriaLabel": "Approbation automatique désactivée - sélectionnez d'abord les options",
 		"triggerLabelOff": "Approbation automatique désactivée",
+		"triggerLabelOffShort": "Désactivé",
 		"triggerLabel_zero": "0 approuvé automatiquement",
 		"triggerLabel_one": "1 approuvé automatiquement",
 		"triggerLabel_other": "{{count}} approuvés automatiquement",
-		"triggerLabelAll": "YOLO"
+		"triggerLabelAll": "BRRR"
 	},
 	"reasoning": {
 		"thinking": "Réflexion",
 		"seconds": "{{count}}s"
 	},
-	"contextCondense": {
-		"title": "Contexte condensé",
-		"condensing": "Condensation du contexte...",
-		"errorHeader": "Échec de la condensation du contexte",
-		"tokens": "tokens"
+	"contextManagement": {
+		"tokens": "tokens",
+		"condensation": {
+			"title": "Contexte condensé",
+			"inProgress": "Condensation du contexte...",
+			"errorHeader": "Échec de la condensation du contexte"
+		},
+		"truncation": {
+			"title": "Contexte tronqué",
+			"inProgress": "Troncature du contexte...",
+			"messagesRemoved": "{{count}} message supprimé",
+			"messagesRemoved_other": "{{count}} messages supprimés",
+			"description": "Les messages plus anciens ont été supprimés de la conversation pour rester dans la limite de la fenêtre de contexte. C'est une approche rapide mais moins conservatrice du contexte par rapport à la condensation."
+		}
+	},
+	"skill": {
+		"wantsToLoad": "Roo veut charger une compétence",
+		"didLoad": "Roo a chargé une compétence"
 	},
 	"followUpSuggest": {
 		"copyToInput": "Copier vers l'entrée (ou Shift + clic)",
-		"autoSelectCountdown": "Sélection automatique dans {{count}}s",
-		"countdownDisplay": "{{count}}s"
+		"timerPrefix": "Approbation automatique activée. Sélection dans {{seconds}}s…"
 	},
 	"announcement": {
-		"title": "🎉 Roo Code {{version}} est sortie",
+		"title": "Roo Code {{version}} est sortie",
+		"support": "Soutiens Roo Code en nous donnant une étoile sur <githubLink>GitHub</githubLink>.",
 		"stealthModel": {
-			"feature": "<bold>Modèle stealth GRATUIT pour une durée limitée</bold> - Code Supernova : Un modèle de codage agentique polyvalent qui prend en charge les entrées d'images, accessible via Roo Code Cloud.",
+			"feature": "<bold>Modèle stealth GRATUIT pour une durée limitée</bold> - Code Supernova : Maintenant amélioré avec une <bold>fenêtre de contexte de 1M tokens</bold> ! Un modèle de codage agentique polyvalent qui prend en charge les entrées d'images, accessible via Roo Code Cloud.",
 			"note": "(Note : les prompts et complétions sont enregistrés par le créateur du modèle et utilisés pour l'améliorer)",
 			"connectButton": "Se connecter à Roo Code Cloud",
 			"selectModel": "Sélectionnez <code>roo/code-supernova</code> du fournisseur Roo Code Cloud dans Paramètres pour commencer.",
 			"goToSettingsButton": "Aller aux Paramètres"
 		},
-		"socialLinks": "Rejoins-nous sur <xLink>X</xLink>, <discordLink>Discord</discordLink>, ou <redditLink>r/RooCode</redditLink> 🚀"
+		"release": {
+			"heading": "Quoi de neuf :",
+			"claudeOpus": "Claude Opus 4.6 : Désormais disponible sur tous les fournisseurs—Roo Code Router, Anthropic, AWS Bedrock, Google Vertex et OpenRouter—apportant le modèle le plus capable d'Anthropic à votre plateforme préférée.",
+			"gptCodex": "GPT-5.3-Codex : Le dernier modèle de codage d'OpenAI est maintenant supporté dans le fournisseur OpenAI - ChatGPT, offrant une génération de code de pointe et une compréhension."
+		},
+		"cloudAgents": {
+			"heading": "Nouveautés dans le Cloud :",
+			"specialized": "Présentation d'<bold>Explainer</bold>, <bold>Planner</bold> et <bold>Coder</bold> - trois agents cloud spécialisés pour améliorer tes workflows.",
+			"description": "Les agents travaillent ensemble dans le cloud et peuvent être déclenchés depuis le web ou via Slack.",
+			"tryButton": "Essayer les Agents Cloud"
+		},
+		"careers": "Aussi, <careersLink>on recrute !</careersLink>"
+	},
+	"costs": {
+		"totalWithSubtasks": "Coût total (sous-tâches comprises) : ${{cost}}",
+		"total": "Coût total : ${{cost}}",
+		"includesSubtasks": "Inclut les coûts des sous-tâches"
 	},
 	"browser": {
+		"session": "Session du navigateur",
+		"active": "Actif",
 		"rooWantsToUse": "Roo veut utiliser le navigateur",
 		"consoleLogs": "Journaux de console",
 		"noNewLogs": "(Pas de nouveaux journaux)",
@@ -304,12 +377,26 @@
 		},
 		"sessionStarted": "Session de navigateur démarrée",
 		"actions": {
-			"title": "Action de navigation : ",
+			"title": "Action du navigateur : ",
+			"launched": "Navigateur lancé",
 			"launch": "Lancer le navigateur sur {{url}}",
+			"clicked": "Cliqué sur : {{coordinate}}",
 			"click": "Cliquer ({{coordinate}})",
+			"typed": "Saisi : {{text}}",
 			"type": "Saisir \"{{text}}\"",
+			"pressed": "Appuyé sur : {{key}}",
+			"press": "Appuyer sur {{key}}",
+			"scrolledDown": "Défilé vers le bas",
 			"scrollDown": "Défiler vers le bas",
+			"scrolledUp": "Défilé vers le haut",
 			"scrollUp": "Défiler vers le haut",
+			"hovered": "Survolé : {{coordinate}}",
+			"hover": "Survoler ({{coordinate}})",
+			"resized": "Redimensionné à : {{size}}",
+			"resize": "Redimensionner à {{size}}",
+			"screenshotSaved": "Capture d'écran enregistrée",
+			"screenshot": "Enregistrer une capture d'écran dans {{path}}",
+			"closed": "Navigateur fermé",
 			"close": "Fermer le navigateur"
 		}
 	},
@@ -317,8 +404,6 @@
 		"tooltips": {
 			"expand": "Développer le bloc de code",
 			"collapse": "Réduire le bloc de code",
-			"enable_wrap": "Activer le retour à la ligne",
-			"disable_wrap": "Désactiver le retour à la ligne",
 			"copy_code": "Copier le code"
 		}
 	},
@@ -410,5 +495,24 @@
 	"slashCommand": {
 		"wantsToRun": "Roo veut exécuter une commande slash",
 		"didRun": "Roo a exécuté une commande slash"
+	},
+	"todo": {
+		"partial": "{{completed}} sur {{total}} tâches terminées",
+		"complete": "{{total}} tâches terminées",
+		"updated": "La liste des tâches a été mise à jour",
+		"completed": "Terminé",
+		"started": "Commencé"
+	},
+	"tooManyTools": {
+		"title": "Trop d'outils activés",
+		"toolsPart_one": "{{count}} outil",
+		"toolsPart_other": "{{count}} outils",
+		"serversPart_one": "{{count}} serveur MCP",
+		"serversPart_other": "{{count}} serveurs MCP",
+		"messageTemplate": "Tu as {{tools}} activés via {{servers}}. Un nombre aussi élevé peut confondre le modèle et entraîner des erreurs. Essaie de le maintenir en dessous de {{threshold}}.",
+		"openMcpSettings": "Ouvrir les paramètres MCP"
+	},
+	"readCommandOutput": {
+		"title": "Roo read command output"
 	}
 }

@@ -1,11 +1,11 @@
 import { Anthropic } from "@anthropic-ai/sdk"
+import OpenAI from "openai"
 
 import type { ProviderSettings, ModelInfo } from "@roo-code/types"
 
 import { ApiStream } from "./transform/stream"
 
 import {
-	GlamaHandler,
 	AnthropicHandler,
 	AwsBedrockHandler,
 	CerebrasHandler,
@@ -13,6 +13,7 @@ import {
 	VertexHandler,
 	AnthropicVertexHandler,
 	OpenAiHandler,
+	OpenAiCodexHandler,
 	LmStudioHandler,
 	GeminiHandler,
 	OpenAiNativeHandler,
@@ -22,14 +23,12 @@ import {
 	VsCodeLmHandler,
 	UnboundHandler,
 	RequestyHandler,
-	HumanRelayHandler,
 	FakeAIHandler,
 	XAIHandler,
 	GroqHandler,
 	HuggingFaceHandler,
 	ChutesHandler,
 	LiteLLMHandler,
-	ClaudeCodeHandler,
 	QwenCodeHandler,
 	SambaNovaHandler,
 	IOIntelligenceHandler,
@@ -40,6 +39,8 @@ import {
 	FeatherlessHandler,
 	VercelAiGatewayHandler,
 	DeepInfraHandler,
+	MiniMaxHandler,
+	BasetenHandler,
 } from "./providers"
 import { NativeOllamaHandler } from "./providers/native-ollama"
 
@@ -48,14 +49,20 @@ export interface SingleCompletionHandler {
 }
 
 export interface ApiHandlerCreateMessageMetadata {
-	mode?: string
-	taskId: string
-	previousResponseId?: string
 	/**
-	 * When true, the provider must NOT fall back to internal continuity state
-	 * (e.g., lastResponseId) if previousResponseId is absent.
-	 * Used to enforce "skip once" after a condense operation.
+	 * Task ID used for tracking and provider-specific features:
+	 * - DeepInfra: Used as prompt_cache_key for caching
+	 * - Roo: Sent as X-Roo-Task-ID header
+	 * - Requesty: Sent as trace_id
+	 * - Unbound: Sent in unbound_metadata
 	 */
+	taskId: string
+	/**
+	 * Current mode slug for provider-specific tracking:
+	 * - Requesty: Sent in extra metadata
+	 * - Unbound: Sent in unbound_metadata
+	 */
+	mode?: string
 	suppressPreviousResponseId?: boolean
 	/**
 	 * Controls whether the response should be stored for 30 days in OpenAI's Responses API.
@@ -65,6 +72,31 @@ export interface ApiHandlerCreateMessageMetadata {
 	 * @default true
 	 */
 	store?: boolean
+	/**
+	 * Optional array of tool definitions to pass to the model.
+	 * For OpenAI-compatible providers, these are ChatCompletionTool definitions.
+	 */
+	tools?: OpenAI.Chat.ChatCompletionTool[]
+	/**
+	 * Controls which (if any) tool is called by the model.
+	 * Can be "none", "auto", "required", or a specific tool choice.
+	 */
+	tool_choice?: OpenAI.Chat.ChatCompletionCreateParams["tool_choice"]
+	/**
+	 * Controls whether the model can return multiple tool calls in a single response.
+	 * When true (default), parallel tool calls are enabled (OpenAI's parallel_tool_calls=true).
+	 * When false, only one tool call is returned per response.
+	 */
+	parallelToolCalls?: boolean
+	/**
+	 * Optional array of tool names that the model is allowed to call.
+	 * When provided, all tool definitions are passed to the model (so it can reference
+	 * historical tool calls), but only the specified tools can actually be invoked.
+	 * This is used when switching modes to prevent model errors from missing tool
+	 * definitions while still restricting callable tools to the current mode's permissions.
+	 * Only applies to providers that support function calling restrictions (e.g., Gemini).
+	 */
+	allowedFunctionNames?: string[]
 }
 
 export interface ApiHandler {
@@ -85,6 +117,15 @@ export interface ApiHandler {
 	 * @returns A promise resolving to the token count
 	 */
 	countTokens(content: Array<Anthropic.Messages.ContentBlockParam>): Promise<number>
+
+	/**
+	 * Indicates whether this provider uses the Vercel AI SDK for streaming.
+	 * AI SDK providers handle reasoning blocks differently and need to preserve
+	 * them in conversation history for proper round-tripping.
+	 *
+	 * @returns true if the provider uses AI SDK, false otherwise
+	 */
+	isAiSdkProvider(): boolean
 }
 
 export function buildApiHandler(configuration: ProviderSettings): ApiHandler {
@@ -93,10 +134,6 @@ export function buildApiHandler(configuration: ProviderSettings): ApiHandler {
 	switch (apiProvider) {
 		case "anthropic":
 			return new AnthropicHandler(options)
-		case "claude-code":
-			return new ClaudeCodeHandler(options)
-		case "glama":
-			return new GlamaHandler(options)
 		case "openrouter":
 			return new OpenRouterHandler(options)
 		case "bedrock":
@@ -113,6 +150,8 @@ export function buildApiHandler(configuration: ProviderSettings): ApiHandler {
 			return new LmStudioHandler(options)
 		case "gemini":
 			return new GeminiHandler(options)
+		case "openai-codex":
+			return new OpenAiCodexHandler(options)
 		case "openai-native":
 			return new OpenAiNativeHandler(options)
 		case "deepseek":
@@ -131,8 +170,6 @@ export function buildApiHandler(configuration: ProviderSettings): ApiHandler {
 			return new UnboundHandler(options)
 		case "requesty":
 			return new RequestyHandler(options)
-		case "human-relay":
-			return new HumanRelayHandler()
 		case "fake-ai":
 			return new FakeAIHandler(options)
 		case "xai":
@@ -165,8 +202,11 @@ export function buildApiHandler(configuration: ProviderSettings): ApiHandler {
 			return new FeatherlessHandler(options)
 		case "vercel-ai-gateway":
 			return new VercelAiGatewayHandler(options)
+		case "minimax":
+			return new MiniMaxHandler(options)
+		case "baseten":
+			return new BasetenHandler(options)
 		default:
-			apiProvider satisfies "gemini-cli" | undefined
 			return new AnthropicHandler(options)
 	}
 }

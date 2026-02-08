@@ -1,63 +1,51 @@
 import type { Anthropic } from "@anthropic-ai/sdk"
-import {
-	GoogleGenAI,
-	type GenerateContentResponseUsageMetadata,
-	type GenerateContentParameters,
-	type GenerateContentConfig,
-	type GroundingMetadata,
-} from "@google/genai"
-import type { JWTInput } from "google-auth-library"
+import { createGoogleGenerativeAI, type GoogleGenerativeAIProvider } from "@ai-sdk/google"
+import { streamText, generateText, NoOutputGeneratedError, ToolSet } from "ai"
 
-import { type ModelInfo, type GeminiModelId, geminiDefaultModelId, geminiModels } from "@roo-code/types"
+import {
+	type ModelInfo,
+	type GeminiModelId,
+	geminiDefaultModelId,
+	geminiModels,
+	ApiProviderError,
+} from "@roo-code/types"
+import { TelemetryService } from "@roo-code/telemetry"
 
 import type { ApiHandlerOptions } from "../../shared/api"
-import { safeJsonParse } from "../../shared/safeJsonParse"
 
-import { convertAnthropicContentToGemini, convertAnthropicMessageToGemini } from "../transform/gemini-format"
+import {
+	convertToAiSdkMessages,
+	convertToolsForAiSdk,
+	processAiSdkStreamPart,
+	mapToolChoice,
+} from "../transform/ai-sdk"
 import { t } from "i18next"
-import type { ApiStream, GroundingSource } from "../transform/stream"
+import type { ApiStream, ApiStreamUsageChunk, GroundingSource } from "../transform/stream"
 import { getModelParams } from "../transform/model-params"
 
 import type { SingleCompletionHandler, ApiHandlerCreateMessageMetadata } from "../index"
 import { BaseProvider } from "./base-provider"
-
-type GeminiHandlerOptions = ApiHandlerOptions & {
-	isVertex?: boolean
-}
+import { DEFAULT_HEADERS } from "./constants"
 
 export class GeminiHandler extends BaseProvider implements SingleCompletionHandler {
 	protected options: ApiHandlerOptions
+	protected provider: GoogleGenerativeAIProvider
+	private readonly providerName = "Gemini"
+	private lastThoughtSignature: string | undefined
 
-	private client: GoogleGenAI
-
-	constructor({ isVertex, ...options }: GeminiHandlerOptions) {
+	constructor(options: ApiHandlerOptions) {
 		super()
 
 		this.options = options
 
-		const project = this.options.vertexProjectId ?? "not-provided"
-		const location = this.options.vertexRegion ?? "not-provided"
-		const apiKey = this.options.geminiApiKey ?? "not-provided"
-
-		this.client = this.options.vertexJsonCredentials
-			? new GoogleGenAI({
-					vertexai: true,
-					project,
-					location,
-					googleAuthOptions: {
-						credentials: safeJsonParse<JWTInput>(this.options.vertexJsonCredentials, undefined),
-					},
-				})
-			: this.options.vertexKeyFile
-				? new GoogleGenAI({
-						vertexai: true,
-						project,
-						location,
-						googleAuthOptions: { keyFile: this.options.vertexKeyFile },
-					})
-				: isVertex
-					? new GoogleGenAI({ vertexai: true, project, location })
-					: new GoogleGenAI({ apiKey })
+		// Create the Google Generative AI provider using AI SDK
+		// For Vertex AI, we still use this provider but with different authentication
+		// (Vertex authentication happens separately)
+		this.provider = createGoogleGenerativeAI({
+			apiKey: this.options.geminiApiKey ?? "not-provided",
+			baseURL: this.options.googleGeminiBaseUrl || undefined,
+			headers: DEFAULT_HEADERS,
+		})
 	}
 
 	async *createMessage(
@@ -65,95 +53,158 @@ export class GeminiHandler extends BaseProvider implements SingleCompletionHandl
 		messages: Anthropic.Messages.MessageParam[],
 		metadata?: ApiHandlerCreateMessageMetadata,
 	): ApiStream {
-		const { id: model, info, reasoning: thinkingConfig, maxTokens } = this.getModel()
+		const { id: modelId, info, reasoning: thinkingConfig, maxTokens } = this.getModel()
 
-		const contents = messages.map(convertAnthropicMessageToGemini)
+		// For hybrid/budget reasoning models (e.g. Gemini 2.5 Pro), respect user-configured
+		// modelMaxTokens so the ThinkingBudget slider can control the cap. For effort-only or
+		// standard models (like gemini-3-pro-preview), ignore any stale modelMaxTokens and
+		// default to the model's computed maxTokens from getModelMaxOutputTokens.
+		const isHybridReasoningModel = info.supportsReasoningBudget || info.requiredReasoningBudget
+		const maxOutputTokens = isHybridReasoningModel
+			? (this.options.modelMaxTokens ?? maxTokens ?? undefined)
+			: (maxTokens ?? undefined)
 
-		const tools: GenerateContentConfig["tools"] = []
-		if (this.options.enableUrlContext) {
-			tools.push({ urlContext: {} })
+		// Determine temperature respecting model capabilities and defaults:
+		// - If supportsTemperature is explicitly false, ignore user overrides
+		//   and pin to the model's defaultTemperature (or omit if undefined).
+		// - Otherwise, allow the user setting to override, falling back to model default,
+		//   then to 1 for Gemini provider default.
+		const supportsTemperature = info.supportsTemperature !== false
+		const temperatureConfig: number | undefined = supportsTemperature
+			? (this.options.modelTemperature ?? info.defaultTemperature ?? 1)
+			: info.defaultTemperature
+
+		// The message list can include provider-specific meta entries such as
+		// `{ type: "reasoning", ... }` that are intended only for providers like
+		// openai-native. Gemini should never see those; they are not valid
+		// Anthropic.MessageParam values and will cause failures.
+		type ReasoningMetaLike = { type?: string }
+
+		const filteredMessages = messages.filter((message): message is Anthropic.Messages.MessageParam => {
+			const meta = message as ReasoningMetaLike
+			if (meta.type === "reasoning") {
+				return false
+			}
+			return true
+		})
+
+		// Convert messages to AI SDK format
+		const aiSdkMessages = convertToAiSdkMessages(filteredMessages)
+
+		// Convert tools to OpenAI format first, then to AI SDK format
+		let openAiTools = this.convertToolsForOpenAI(metadata?.tools)
+
+		// Filter tools based on allowedFunctionNames for mode-restricted tool access
+		if (metadata?.allowedFunctionNames && metadata.allowedFunctionNames.length > 0 && openAiTools) {
+			const allowedSet = new Set(metadata.allowedFunctionNames)
+			openAiTools = openAiTools.filter((tool) => tool.type === "function" && allowedSet.has(tool.function.name))
 		}
 
-		if (this.options.enableGrounding) {
-			tools.push({ googleSearch: {} })
-		}
+		const aiSdkTools = convertToolsForAiSdk(openAiTools) as ToolSet | undefined
 
-		const config: GenerateContentConfig = {
-			systemInstruction,
-			httpOptions: this.options.googleGeminiBaseUrl ? { baseUrl: this.options.googleGeminiBaseUrl } : undefined,
-			thinkingConfig,
-			maxOutputTokens: this.options.modelMaxTokens ?? maxTokens ?? undefined,
-			temperature: this.options.modelTemperature ?? 0,
-			...(tools.length > 0 ? { tools } : {}),
-		}
+		// Build tool choice - use 'required' when allowedFunctionNames restricts available tools
+		const toolChoice =
+			metadata?.allowedFunctionNames && metadata.allowedFunctionNames.length > 0
+				? "required"
+				: mapToolChoice(metadata?.tool_choice)
 
-		const params: GenerateContentParameters = { model, contents, config }
+		// Build the request options
+		const requestOptions: Parameters<typeof streamText>[0] = {
+			model: this.provider(modelId),
+			system: systemInstruction,
+			messages: aiSdkMessages,
+			temperature: temperatureConfig,
+			maxOutputTokens,
+			tools: aiSdkTools,
+			toolChoice,
+			// Add thinking/reasoning configuration if present
+			// Cast to any to bypass strict JSONObject typing - the AI SDK accepts the correct runtime values
+			...(thinkingConfig && {
+				providerOptions: { google: { thinkingConfig } } as any,
+			}),
+		}
 
 		try {
-			const result = await this.client.models.generateContentStream(params)
+			// Reset thought signature for this request
+			this.lastThoughtSignature = undefined
 
-			let lastUsageMetadata: GenerateContentResponseUsageMetadata | undefined
-			let pendingGroundingMetadata: GroundingMetadata | undefined
+			// Use streamText for streaming responses
+			const result = streamText(requestOptions)
 
-			for await (const chunk of result) {
-				// Process candidates and their parts to separate thoughts from content
-				if (chunk.candidates && chunk.candidates.length > 0) {
-					const candidate = chunk.candidates[0]
+			// Track whether any text content was yielded (not just reasoning/thinking)
+			let hasContent = false
 
-					if (candidate.groundingMetadata) {
-						pendingGroundingMetadata = candidate.groundingMetadata
-					}
-
-					if (candidate.content && candidate.content.parts) {
-						for (const part of candidate.content.parts) {
-							if (part.thought) {
-								// This is a thinking/reasoning part
-								if (part.text) {
-									yield { type: "reasoning", text: part.text }
-								}
-							} else {
-								// This is regular content
-								if (part.text) {
-									yield { type: "text", text: part.text }
-								}
-							}
-						}
+			// Process the full stream to get all events including reasoning
+			for await (const part of result.fullStream) {
+				// Capture thoughtSignature from tool-call events (Gemini 3 thought signatures)
+				// The AI SDK's tool-call event includes providerMetadata with the signature
+				if (part.type === "tool-call") {
+					const googleMeta = (part as any).providerMetadata?.google
+					if (googleMeta?.thoughtSignature) {
+						this.lastThoughtSignature = googleMeta.thoughtSignature
 					}
 				}
 
-				// Fallback to the original text property if no candidates structure
-				else if (chunk.text) {
-					yield { type: "text", text: chunk.text }
-				}
-
-				if (chunk.usageMetadata) {
-					lastUsageMetadata = chunk.usageMetadata
+				for (const chunk of processAiSdkStreamPart(part)) {
+					if (chunk.type === "text" || chunk.type === "tool_call_start") {
+						hasContent = true
+					}
+					yield chunk
 				}
 			}
 
-			if (pendingGroundingMetadata) {
-				const sources = this.extractGroundingSources(pendingGroundingMetadata)
+			// If the stream completed without yielding any text content, inform the user
+			// TODO: Move to i18n key common:errors.gemini.empty_response once translation pipeline is updated
+			if (!hasContent) {
+				yield {
+					type: "text" as const,
+					text: "Model returned an empty response. This may be caused by an unsupported thinking configuration or content filtering.",
+				}
+			}
+
+			// Extract grounding sources from providerMetadata if available
+			const providerMetadata = await result.providerMetadata
+			const groundingMetadata = providerMetadata?.google as
+				| {
+						groundingMetadata?: {
+							groundingChunks?: Array<{
+								web?: { uri?: string; title?: string }
+							}>
+						}
+				  }
+				| undefined
+
+			if (groundingMetadata?.groundingMetadata) {
+				const sources = this.extractGroundingSources(groundingMetadata.groundingMetadata)
 				if (sources.length > 0) {
 					yield { type: "grounding", sources }
 				}
 			}
 
-			if (lastUsageMetadata) {
-				const inputTokens = lastUsageMetadata.promptTokenCount ?? 0
-				const outputTokens = lastUsageMetadata.candidatesTokenCount ?? 0
-				const cacheReadTokens = lastUsageMetadata.cachedContentTokenCount
-				const reasoningTokens = lastUsageMetadata.thoughtsTokenCount
-
-				yield {
-					type: "usage",
-					inputTokens,
-					outputTokens,
-					cacheReadTokens,
-					reasoningTokens,
-					totalCost: this.calculateCost({ info, inputTokens, outputTokens, cacheReadTokens }),
+			// Yield usage metrics at the end
+			// Wrap in try-catch to handle NoOutputGeneratedError thrown by the AI SDK
+			// when the stream produces no output (e.g., thinking-only, safety block)
+			try {
+				const usage = await result.usage
+				if (usage) {
+					yield this.processUsageMetrics(usage, info, providerMetadata)
+				}
+			} catch (usageError) {
+				if (usageError instanceof NoOutputGeneratedError) {
+					// If we already yielded the empty-stream message, suppress this error
+					if (hasContent) {
+						throw usageError
+					}
+					// Otherwise the informative message was already yielded above — no-op
+				} else {
+					throw usageError
 				}
 			}
 		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error)
+			const apiError = new ApiProviderError(errorMessage, this.providerName, modelId, "createMessage")
+			TelemetryService.instance.captureException(apiError)
+
 			if (error instanceof Error) {
 				throw new Error(t("common:errors.gemini.generate_stream", { error: error.message }))
 			}
@@ -166,7 +217,14 @@ export class GeminiHandler extends BaseProvider implements SingleCompletionHandl
 		const modelId = this.options.apiModelId
 		let id = modelId && modelId in geminiModels ? (modelId as GeminiModelId) : geminiDefaultModelId
 		let info: ModelInfo = geminiModels[id]
-		const params = getModelParams({ format: "gemini", modelId: id, model: info, settings: this.options })
+
+		const params = getModelParams({
+			format: "gemini",
+			modelId: id,
+			model: info,
+			settings: this.options,
+			defaultTemperature: info.defaultTemperature ?? 1,
+		})
 
 		// The `:thinking` suffix indicates that the model is a "Hybrid"
 		// reasoning model and that reasoning is required to be enabled.
@@ -175,7 +233,47 @@ export class GeminiHandler extends BaseProvider implements SingleCompletionHandl
 		return { id: id.endsWith(":thinking") ? id.replace(":thinking", "") : id, info, ...params }
 	}
 
-	private extractGroundingSources(groundingMetadata?: GroundingMetadata): GroundingSource[] {
+	/**
+	 * Process usage metrics from the AI SDK response.
+	 */
+	protected processUsageMetrics(
+		usage: {
+			inputTokens?: number
+			outputTokens?: number
+			details?: {
+				cachedInputTokens?: number
+				reasoningTokens?: number
+			}
+		},
+		info: ModelInfo,
+		providerMetadata?: Record<string, unknown>,
+	): ApiStreamUsageChunk {
+		const inputTokens = usage.inputTokens || 0
+		const outputTokens = usage.outputTokens || 0
+		const cacheReadTokens = usage.details?.cachedInputTokens
+		const reasoningTokens = usage.details?.reasoningTokens
+
+		return {
+			type: "usage",
+			inputTokens,
+			outputTokens,
+			cacheReadTokens,
+			reasoningTokens,
+			totalCost: this.calculateCost({
+				info,
+				inputTokens,
+				outputTokens,
+				cacheReadTokens,
+				reasoningTokens,
+			}),
+		}
+	}
+
+	private extractGroundingSources(groundingMetadata?: {
+		groundingChunks?: Array<{
+			web?: { uri?: string; title?: string }
+		}>
+	}): GroundingSource[] {
 		const chunks = groundingMetadata?.groundingChunks
 
 		if (!chunks) {
@@ -198,7 +296,11 @@ export class GeminiHandler extends BaseProvider implements SingleCompletionHandl
 			.filter((source): source is GroundingSource => source !== null)
 	}
 
-	private extractCitationsOnly(groundingMetadata?: GroundingMetadata): string | null {
+	private extractCitationsOnly(groundingMetadata?: {
+		groundingChunks?: Array<{
+			web?: { uri?: string; title?: string }
+		}>
+	}): string | null {
 		const sources = this.extractGroundingSources(groundingMetadata)
 
 		if (sources.length === 0) {
@@ -210,35 +312,36 @@ export class GeminiHandler extends BaseProvider implements SingleCompletionHandl
 	}
 
 	async completePrompt(prompt: string): Promise<string> {
+		const { id: modelId, info } = this.getModel()
+
 		try {
-			const { id: model } = this.getModel()
+			const supportsTemperature = info.supportsTemperature !== false
+			const temperatureConfig: number | undefined = supportsTemperature
+				? (this.options.modelTemperature ?? info.defaultTemperature ?? 1)
+				: info.defaultTemperature
 
-			const tools: GenerateContentConfig["tools"] = []
-			if (this.options.enableUrlContext) {
-				tools.push({ urlContext: {} })
-			}
-			if (this.options.enableGrounding) {
-				tools.push({ googleSearch: {} })
-			}
-			const promptConfig: GenerateContentConfig = {
-				httpOptions: this.options.googleGeminiBaseUrl
-					? { baseUrl: this.options.googleGeminiBaseUrl }
-					: undefined,
-				temperature: this.options.modelTemperature ?? 0,
-				...(tools.length > 0 ? { tools } : {}),
-			}
-
-			const result = await this.client.models.generateContent({
-				model,
-				contents: [{ role: "user", parts: [{ text: prompt }] }],
-				config: promptConfig,
+			const result = await generateText({
+				model: this.provider(modelId),
+				prompt,
+				temperature: temperatureConfig,
 			})
 
 			let text = result.text ?? ""
 
-			const candidate = result.candidates?.[0]
-			if (candidate?.groundingMetadata) {
-				const citations = this.extractCitationsOnly(candidate.groundingMetadata)
+			// Extract grounding citations from providerMetadata if available
+			const providerMetadata = result.providerMetadata
+			const groundingMetadata = providerMetadata?.google as
+				| {
+						groundingMetadata?: {
+							groundingChunks?: Array<{
+								web?: { uri?: string; title?: string }
+							}>
+						}
+				  }
+				| undefined
+
+			if (groundingMetadata?.groundingMetadata) {
+				const citations = this.extractCitationsOnly(groundingMetadata.groundingMetadata)
 				if (citations) {
 					text += `\n\n${t("common:errors.gemini.sources")} ${citations}`
 				}
@@ -246,6 +349,10 @@ export class GeminiHandler extends BaseProvider implements SingleCompletionHandl
 
 			return text
 		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error)
+			const apiError = new ApiProviderError(errorMessage, this.providerName, modelId, "completePrompt")
+			TelemetryService.instance.captureException(apiError)
+
 			if (error instanceof Error) {
 				throw new Error(t("common:errors.gemini.generate_complete_prompt", { error: error.message }))
 			}
@@ -254,37 +361,18 @@ export class GeminiHandler extends BaseProvider implements SingleCompletionHandl
 		}
 	}
 
-	override async countTokens(content: Array<Anthropic.Messages.ContentBlockParam>): Promise<number> {
-		try {
-			const { id: model } = this.getModel()
-
-			const response = await this.client.models.countTokens({
-				model,
-				contents: convertAnthropicContentToGemini(content),
-			})
-
-			if (response.totalTokens === undefined) {
-				console.warn("Gemini token counting returned undefined, using fallback")
-				return super.countTokens(content)
-			}
-
-			return response.totalTokens
-		} catch (error) {
-			console.warn("Gemini token counting failed, using fallback", error)
-			return super.countTokens(content)
-		}
-	}
-
 	public calculateCost({
 		info,
 		inputTokens,
 		outputTokens,
 		cacheReadTokens = 0,
+		reasoningTokens = 0,
 	}: {
 		info: ModelInfo
 		inputTokens: number
 		outputTokens: number
 		cacheReadTokens?: number
+		reasoningTokens?: number
 	}) {
 		// For models with tiered pricing, prices might only be defined in tiers
 		let inputPrice = info.inputPrice
@@ -316,23 +404,37 @@ export class GeminiHandler extends BaseProvider implements SingleCompletionHandl
 		// Subtract the cached input tokens from the total input tokens.
 		const uncachedInputTokens = inputTokens - cacheReadTokens
 
+		// Bill both completion and reasoning ("thoughts") tokens as output.
+		const billedOutputTokens = outputTokens + reasoningTokens
+
 		let cacheReadCost = cacheReadTokens > 0 ? cacheReadsPrice * (cacheReadTokens / 1_000_000) : 0
 
 		const inputTokensCost = inputPrice * (uncachedInputTokens / 1_000_000)
-		const outputTokensCost = outputPrice * (outputTokens / 1_000_000)
+		const outputTokensCost = outputPrice * (billedOutputTokens / 1_000_000)
 		const totalCost = inputTokensCost + outputTokensCost + cacheReadCost
 
 		const trace: Record<string, { price: number; tokens: number; cost: number }> = {
 			input: { price: inputPrice, tokens: uncachedInputTokens, cost: inputTokensCost },
-			output: { price: outputPrice, tokens: outputTokens, cost: outputTokensCost },
+			output: { price: outputPrice, tokens: billedOutputTokens, cost: outputTokensCost },
 		}
 
 		if (cacheReadTokens > 0) {
 			trace.cacheRead = { price: cacheReadsPrice, tokens: cacheReadTokens, cost: cacheReadCost }
 		}
 
-		// console.log(`[GeminiHandler] calculateCost -> ${totalCost}`, trace)
-
 		return totalCost
+	}
+
+	override isAiSdkProvider(): boolean {
+		return true
+	}
+
+	/**
+	 * Returns the thought signature captured from the last Gemini response.
+	 * Gemini 3 models return thoughtSignature on function call parts,
+	 * which must be round-tripped back for tool use continuations.
+	 */
+	getThoughtSignature(): string | undefined {
+		return this.lastThoughtSignature
 	}
 }

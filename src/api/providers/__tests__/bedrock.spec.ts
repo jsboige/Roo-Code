@@ -1,3 +1,14 @@
+// Mock TelemetryService before other imports
+const mockCaptureException = vi.fn()
+
+vi.mock("@roo-code/telemetry", () => ({
+	TelemetryService: {
+		instance: {
+			captureException: (...args: unknown[]) => mockCaptureException(...args),
+		},
+	},
+}))
+
 // Mock AWS SDK credential providers
 vi.mock("@aws-sdk/credential-providers", () => {
 	const mockFromIni = vi.fn().mockReturnValue({
@@ -7,31 +18,34 @@ vi.mock("@aws-sdk/credential-providers", () => {
 	return { fromIni: mockFromIni }
 })
 
-// Mock BedrockRuntimeClient and ConverseStreamCommand
-vi.mock("@aws-sdk/client-bedrock-runtime", () => {
-	const mockSend = vi.fn().mockResolvedValue({
-		stream: [],
-	})
-	const mockConverseStreamCommand = vi.fn()
+// Use vi.hoisted to define mock functions for AI SDK
+const { mockStreamText, mockGenerateText } = vi.hoisted(() => ({
+	mockStreamText: vi.fn(),
+	mockGenerateText: vi.fn(),
+}))
 
+vi.mock("ai", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("ai")>()
 	return {
-		BedrockRuntimeClient: vi.fn().mockImplementation(() => ({
-			send: mockSend,
-		})),
-		ConverseStreamCommand: mockConverseStreamCommand,
-		ConverseCommand: vi.fn(),
+		...actual,
+		streamText: mockStreamText,
+		generateText: mockGenerateText,
 	}
 })
 
+vi.mock("@ai-sdk/amazon-bedrock", () => ({
+	createAmazonBedrock: vi.fn(() => vi.fn(() => ({ modelId: "test", provider: "bedrock" }))),
+}))
+
 import { AwsBedrockHandler } from "../bedrock"
-import { ConverseStreamCommand, BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime"
-import { BEDROCK_CLAUDE_SONNET_4_MODEL_ID } from "@roo-code/types"
+import {
+	BEDROCK_1M_CONTEXT_MODEL_IDS,
+	BEDROCK_SERVICE_TIER_MODEL_IDS,
+	bedrockModels,
+	ApiProviderError,
+} from "@roo-code/types"
 
 import type { Anthropic } from "@anthropic-ai/sdk"
-
-// Get access to the mocked functions
-const mockConverseStreamCommand = vi.mocked(ConverseStreamCommand)
-const mockBedrockRuntimeClient = vi.mocked(BedrockRuntimeClient)
 
 describe("AwsBedrockHandler", () => {
 	let handler: AwsBedrockHandler
@@ -114,8 +128,14 @@ describe("AwsBedrockHandler", () => {
 			it("should return correct prefix for APAC regions", () => {
 				const getPrefixForRegion = (AwsBedrockHandler as any).getPrefixForRegion
 
+				// Australia regions (Sydney and Melbourne) get au. prefix
+				expect(getPrefixForRegion("ap-southeast-2")).toBe("au.")
+				expect(getPrefixForRegion("ap-southeast-4")).toBe("au.")
+				// Japan regions (Tokyo and Osaka) get jp. prefix
+				expect(getPrefixForRegion("ap-northeast-1")).toBe("jp.")
+				expect(getPrefixForRegion("ap-northeast-3")).toBe("jp.")
+				// Other APAC regions get apac. prefix
 				expect(getPrefixForRegion("ap-southeast-1")).toBe("apac.")
-				expect(getPrefixForRegion("ap-northeast-1")).toBe("apac.")
 				expect(getPrefixForRegion("ap-south-1")).toBe("apac.")
 			})
 
@@ -354,17 +374,122 @@ describe("AwsBedrockHandler", () => {
 				expect(result.modelId).toBe("ap.anthropic.claude-3-5-sonnet-20241022-v2:0") // Should be preserved as-is
 			})
 		})
+
+		describe("AWS GovCloud and China partition support", () => {
+			it("should parse AWS GovCloud ARNs (arn:aws-us-gov:bedrock:...)", () => {
+				const handler = new AwsBedrockHandler({
+					apiModelId: "test",
+					awsAccessKey: "test",
+					awsSecretKey: "test",
+					awsRegion: "us-gov-west-1",
+				})
+
+				const parseArn = (handler as any).parseArn.bind(handler)
+
+				const result = parseArn(
+					"arn:aws-us-gov:bedrock:us-gov-west-1:123456789012:inference-profile/us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0",
+				)
+
+				expect(result.isValid).toBe(true)
+				expect(result.region).toBe("us-gov-west-1")
+				expect(result.modelType).toBe("inference-profile")
+			})
+
+			it("should parse AWS China ARNs (arn:aws-cn:bedrock:...)", () => {
+				const handler = new AwsBedrockHandler({
+					apiModelId: "test",
+					awsAccessKey: "test",
+					awsSecretKey: "test",
+					awsRegion: "cn-north-1",
+				})
+
+				const parseArn = (handler as any).parseArn.bind(handler)
+
+				const result = parseArn(
+					"arn:aws-cn:bedrock:cn-north-1:123456789012:inference-profile/anthropic.claude-3-sonnet-20240229-v1:0",
+				)
+
+				expect(result.isValid).toBe(true)
+				expect(result.region).toBe("cn-north-1")
+				expect(result.modelType).toBe("inference-profile")
+			})
+
+			it("should accept GovCloud custom ARN in handler constructor", () => {
+				const handler = new AwsBedrockHandler({
+					apiModelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+					awsAccessKey: "test-access-key",
+					awsSecretKey: "test-secret-key",
+					awsRegion: "us-gov-west-1",
+					awsCustomArn:
+						"arn:aws-us-gov:bedrock:us-gov-west-1:123456789012:inference-profile/us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0",
+				})
+
+				// Should not throw and should return valid model info
+				const modelInfo = handler.getModel()
+				expect(modelInfo.id).toBe(
+					"arn:aws-us-gov:bedrock:us-gov-west-1:123456789012:inference-profile/us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0",
+				)
+				expect(modelInfo.info).toBeDefined()
+			})
+
+			it("should accept China region custom ARN in handler constructor", () => {
+				const handler = new AwsBedrockHandler({
+					apiModelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+					awsAccessKey: "test-access-key",
+					awsSecretKey: "test-secret-key",
+					awsRegion: "cn-north-1",
+					awsCustomArn:
+						"arn:aws-cn:bedrock:cn-north-1:123456789012:inference-profile/anthropic.claude-3-sonnet-20240229-v1:0",
+				})
+
+				// Should not throw and should return valid model info
+				const modelInfo = handler.getModel()
+				expect(modelInfo.id).toBe(
+					"arn:aws-cn:bedrock:cn-north-1:123456789012:inference-profile/anthropic.claude-3-sonnet-20240229-v1:0",
+				)
+				expect(modelInfo.info).toBeDefined()
+			})
+
+			it("should detect region mismatch in GovCloud ARN", () => {
+				const handler = new AwsBedrockHandler({
+					apiModelId: "test",
+					awsAccessKey: "test",
+					awsSecretKey: "test",
+					awsRegion: "us-east-1",
+				})
+
+				const parseArn = (handler as any).parseArn.bind(handler)
+
+				// Region in ARN (us-gov-west-1) doesn't match provided region (us-east-1)
+				const result = parseArn(
+					"arn:aws-us-gov:bedrock:us-gov-west-1:123456789012:inference-profile/us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0",
+					"us-east-1",
+				)
+
+				expect(result.isValid).toBe(true)
+				expect(result.region).toBe("us-gov-west-1")
+				expect(result.errorMessage).toContain("Region mismatch")
+			})
+		})
 	})
 
 	describe("image handling", () => {
 		const mockImageData = Buffer.from("test-image-data").toString("base64")
 
-		beforeEach(() => {
-			// Reset the mocks before each test
-			mockConverseStreamCommand.mockReset()
-		})
+		function setupMockStreamText() {
+			async function* mockFullStream() {
+				yield { type: "text-delta", text: "I see an image" }
+			}
+			mockStreamText.mockReturnValue({
+				fullStream: mockFullStream(),
+				usage: Promise.resolve({ inputTokens: 10, outputTokens: 5 }),
+				providerMetadata: Promise.resolve({}),
+			})
+		}
 
-		it("should properly convert image content to Bedrock format", async () => {
+		it("should properly pass image content through to streamText via AI SDK messages", async () => {
+			setupMockStreamText()
+
 			const messages: Anthropic.Messages.MessageParam[] = [
 				{
 					role: "user",
@@ -386,42 +511,39 @@ describe("AwsBedrockHandler", () => {
 			]
 
 			const generator = handler.createMessage("", messages)
-			await generator.next() // Start the generator
+			const chunks: unknown[] = []
+			for await (const chunk of generator) {
+				chunks.push(chunk)
+			}
 
-			// Verify the command was created with the right payload
-			expect(mockConverseStreamCommand).toHaveBeenCalled()
-			const commandArg = mockConverseStreamCommand.mock.calls[0][0]
+			// Verify streamText was called
+			expect(mockStreamText).toHaveBeenCalledTimes(1)
+			const callArgs = mockStreamText.mock.calls[0][0]
 
-			// Verify the image was properly formatted
-			const imageBlock = commandArg.messages![0].content![0]
-			expect(imageBlock).toHaveProperty("image")
-			expect(imageBlock.image).toHaveProperty("format", "jpeg")
-			expect(imageBlock.image!.source).toHaveProperty("bytes")
-			expect(imageBlock.image!.source!.bytes).toBeInstanceOf(Uint8Array)
-		})
+			// Verify messages were converted to AI SDK format with image parts
+			const aiSdkMessages = callArgs.messages
+			expect(aiSdkMessages).toBeDefined()
+			expect(aiSdkMessages.length).toBeGreaterThan(0)
 
-		it("should reject unsupported image formats", async () => {
-			const messages: Anthropic.Messages.MessageParam[] = [
-				{
-					role: "user",
-					content: [
-						{
-							type: "image",
-							source: {
-								type: "base64",
-								data: mockImageData,
-								media_type: "image/tiff" as "image/jpeg", // Type assertion to bypass TS
-							},
-						},
-					],
-				},
-			]
+			// Find the user message containing image content
+			const userMsg = aiSdkMessages.find((m: { role: string }) => m.role === "user")
+			expect(userMsg).toBeDefined()
+			expect(Array.isArray(userMsg.content)).toBe(true)
 
-			const generator = handler.createMessage("", messages)
-			await expect(generator.next()).rejects.toThrow("Unsupported image format: tiff")
+			// The AI SDK convertToAiSdkMessages converts images to { type: "image", image: "data:...", mimeType: "..." }
+			const imagePart = userMsg.content.find((p: { type: string }) => p.type === "image")
+			expect(imagePart).toBeDefined()
+			expect(imagePart.image).toContain("data:image/jpeg;base64,")
+			expect(imagePart.mimeType).toBe("image/jpeg")
+
+			const textPart = userMsg.content.find((p: { type: string }) => p.type === "text")
+			expect(textPart).toBeDefined()
+			expect(textPart.text).toBe("What's in this image?")
 		})
 
 		it("should handle multiple images in a single message", async () => {
+			setupMockStreamText()
+
 			const messages: Anthropic.Messages.MessageParam[] = [
 				{
 					role: "user",
@@ -455,20 +577,25 @@ describe("AwsBedrockHandler", () => {
 			]
 
 			const generator = handler.createMessage("", messages)
-			await generator.next() // Start the generator
+			const chunks: unknown[] = []
+			for await (const chunk of generator) {
+				chunks.push(chunk)
+			}
 
-			// Verify the command was created with the right payload
-			expect(mockConverseStreamCommand).toHaveBeenCalled()
-			const commandArg = mockConverseStreamCommand.mock.calls[0][0]
+			// Verify streamText was called
+			expect(mockStreamText).toHaveBeenCalledTimes(1)
+			const callArgs = mockStreamText.mock.calls[0][0]
 
-			// Verify both images were properly formatted
-			const firstImage = commandArg.messages![0].content![0]
-			const secondImage = commandArg.messages![0].content![2]
+			// Verify messages contain both images
+			const userMsg = callArgs.messages.find((m: { role: string }) => m.role === "user")
+			expect(userMsg).toBeDefined()
 
-			expect(firstImage).toHaveProperty("image")
-			expect(firstImage.image).toHaveProperty("format", "jpeg")
-			expect(secondImage).toHaveProperty("image")
-			expect(secondImage.image).toHaveProperty("format", "png")
+			const imageParts = userMsg.content.filter((p: { type: string }) => p.type === "image")
+			expect(imageParts).toHaveLength(2)
+			expect(imageParts[0].image).toContain("data:image/jpeg;base64,")
+			expect(imageParts[0].mimeType).toBe("image/jpeg")
+			expect(imageParts[1].image).toContain("data:image/png;base64,")
+			expect(imageParts[1].mimeType).toBe("image/png")
 		})
 	})
 
@@ -567,9 +694,20 @@ describe("AwsBedrockHandler", () => {
 	})
 
 	describe("1M context beta feature", () => {
+		function setupMockStreamText() {
+			async function* mockFullStream() {
+				yield { type: "text-delta", text: "Response" }
+			}
+			mockStreamText.mockReturnValue({
+				fullStream: mockFullStream(),
+				usage: Promise.resolve({ inputTokens: 10, outputTokens: 5 }),
+				providerMetadata: Promise.resolve({}),
+			})
+		}
+
 		it("should enable 1M context window when awsBedrock1MContext is true for Claude Sonnet 4", () => {
 			const handler = new AwsBedrockHandler({
-				apiModelId: BEDROCK_CLAUDE_SONNET_4_MODEL_ID,
+				apiModelId: BEDROCK_1M_CONTEXT_MODEL_IDS[0],
 				awsAccessKey: "test",
 				awsSecretKey: "test",
 				awsRegion: "us-east-1",
@@ -584,7 +722,7 @@ describe("AwsBedrockHandler", () => {
 
 		it("should use default context window when awsBedrock1MContext is false for Claude Sonnet 4", () => {
 			const handler = new AwsBedrockHandler({
-				apiModelId: BEDROCK_CLAUDE_SONNET_4_MODEL_ID,
+				apiModelId: BEDROCK_1M_CONTEXT_MODEL_IDS[0],
 				awsAccessKey: "test",
 				awsSecretKey: "test",
 				awsRegion: "us-east-1",
@@ -612,9 +750,11 @@ describe("AwsBedrockHandler", () => {
 			expect(model.info.contextWindow).toBe(200_000)
 		})
 
-		it("should include anthropic_beta parameter when 1M context is enabled", async () => {
+		it("should include anthropicBeta in providerOptions when 1M context is enabled", async () => {
+			setupMockStreamText()
+
 			const handler = new AwsBedrockHandler({
-				apiModelId: BEDROCK_CLAUDE_SONNET_4_MODEL_ID,
+				apiModelId: BEDROCK_1M_CONTEXT_MODEL_IDS[0],
 				awsAccessKey: "test",
 				awsSecretKey: "test",
 				awsRegion: "us-east-1",
@@ -629,22 +769,25 @@ describe("AwsBedrockHandler", () => {
 			]
 
 			const generator = handler.createMessage("", messages)
-			await generator.next() // Start the generator
+			const chunks: unknown[] = []
+			for await (const chunk of generator) {
+				chunks.push(chunk)
+			}
 
-			// Verify the command was created with the right payload
-			expect(mockConverseStreamCommand).toHaveBeenCalled()
-			const commandArg = mockConverseStreamCommand.mock.calls[0][0] as any
+			expect(mockStreamText).toHaveBeenCalledTimes(1)
+			const callArgs = mockStreamText.mock.calls[0][0]
 
-			// Should include anthropic_beta in additionalModelRequestFields
-			expect(commandArg.additionalModelRequestFields).toBeDefined()
-			expect(commandArg.additionalModelRequestFields.anthropic_beta).toEqual(["context-1m-2025-08-07"])
-			// Should not include anthropic_version since thinking is not enabled
-			expect(commandArg.additionalModelRequestFields.anthropic_version).toBeUndefined()
+			// Should include anthropicBeta in providerOptions.bedrock with 1M context
+			const bedrockOpts = callArgs.providerOptions?.bedrock as Record<string, unknown> | undefined
+			expect(bedrockOpts).toBeDefined()
+			expect(bedrockOpts!.anthropicBeta).toContain("context-1m-2025-08-07")
 		})
 
-		it("should not include anthropic_beta parameter when 1M context is disabled", async () => {
+		it("should not include 1M context beta when 1M context is disabled", async () => {
+			setupMockStreamText()
+
 			const handler = new AwsBedrockHandler({
-				apiModelId: BEDROCK_CLAUDE_SONNET_4_MODEL_ID,
+				apiModelId: BEDROCK_1M_CONTEXT_MODEL_IDS[0],
 				awsAccessKey: "test",
 				awsSecretKey: "test",
 				awsRegion: "us-east-1",
@@ -659,17 +802,24 @@ describe("AwsBedrockHandler", () => {
 			]
 
 			const generator = handler.createMessage("", messages)
-			await generator.next() // Start the generator
+			const chunks: unknown[] = []
+			for await (const chunk of generator) {
+				chunks.push(chunk)
+			}
 
-			// Verify the command was created with the right payload
-			expect(mockConverseStreamCommand).toHaveBeenCalled()
-			const commandArg = mockConverseStreamCommand.mock.calls[0][0] as any
+			expect(mockStreamText).toHaveBeenCalledTimes(1)
+			const callArgs = mockStreamText.mock.calls[0][0]
 
-			// Should not include anthropic_beta in additionalModelRequestFields
-			expect(commandArg.additionalModelRequestFields).toBeUndefined()
+			// Should NOT include anthropicBeta with 1M context
+			const bedrockOpts = callArgs.providerOptions?.bedrock as Record<string, unknown> | undefined
+			if (bedrockOpts?.anthropicBeta) {
+				expect(bedrockOpts.anthropicBeta).not.toContain("context-1m-2025-08-07")
+			}
 		})
 
-		it("should not include anthropic_beta parameter for non-Claude Sonnet 4 models", async () => {
+		it("should not include 1M context beta for non-Claude Sonnet 4 models", async () => {
+			setupMockStreamText()
+
 			const handler = new AwsBedrockHandler({
 				apiModelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
 				awsAccessKey: "test",
@@ -686,19 +836,24 @@ describe("AwsBedrockHandler", () => {
 			]
 
 			const generator = handler.createMessage("", messages)
-			await generator.next() // Start the generator
+			const chunks: unknown[] = []
+			for await (const chunk of generator) {
+				chunks.push(chunk)
+			}
 
-			// Verify the command was created with the right payload
-			expect(mockConverseStreamCommand).toHaveBeenCalled()
-			const commandArg = mockConverseStreamCommand.mock.calls[0][0] as any
+			expect(mockStreamText).toHaveBeenCalledTimes(1)
+			const callArgs = mockStreamText.mock.calls[0][0]
 
-			// Should not include anthropic_beta for non-Sonnet 4 models
-			expect(commandArg.additionalModelRequestFields).toBeUndefined()
+			// Should NOT include anthropicBeta with 1M context for non-Sonnet 4 models
+			const bedrockOpts = callArgs.providerOptions?.bedrock as Record<string, unknown> | undefined
+			if (bedrockOpts?.anthropicBeta) {
+				expect(bedrockOpts.anthropicBeta).not.toContain("context-1m-2025-08-07")
+			}
 		})
 
 		it("should enable 1M context window with cross-region inference for Claude Sonnet 4", () => {
 			const handler = new AwsBedrockHandler({
-				apiModelId: BEDROCK_CLAUDE_SONNET_4_MODEL_ID,
+				apiModelId: BEDROCK_1M_CONTEXT_MODEL_IDS[0],
 				awsAccessKey: "test",
 				awsSecretKey: "test",
 				awsRegion: "us-east-1",
@@ -711,12 +866,14 @@ describe("AwsBedrockHandler", () => {
 			// Should have 1M context window even with cross-region prefix
 			expect(model.info.contextWindow).toBe(1_000_000)
 			// Model ID should have cross-region prefix
-			expect(model.id).toBe(`us.${BEDROCK_CLAUDE_SONNET_4_MODEL_ID}`)
+			expect(model.id).toBe(`us.${BEDROCK_1M_CONTEXT_MODEL_IDS[0]}`)
 		})
 
-		it("should include anthropic_beta parameter with cross-region inference for Claude Sonnet 4", async () => {
+		it("should include anthropicBeta with cross-region inference for Claude Sonnet 4", async () => {
+			setupMockStreamText()
+
 			const handler = new AwsBedrockHandler({
-				apiModelId: BEDROCK_CLAUDE_SONNET_4_MODEL_ID,
+				apiModelId: BEDROCK_1M_CONTEXT_MODEL_IDS[0],
 				awsAccessKey: "test",
 				awsSecretKey: "test",
 				awsRegion: "us-east-1",
@@ -732,21 +889,402 @@ describe("AwsBedrockHandler", () => {
 			]
 
 			const generator = handler.createMessage("", messages)
-			await generator.next() // Start the generator
+			const chunks: unknown[] = []
+			for await (const chunk of generator) {
+				chunks.push(chunk)
+			}
 
-			// Verify the command was created with the right payload
-			expect(mockConverseStreamCommand).toHaveBeenCalled()
-			const commandArg = mockConverseStreamCommand.mock.calls[
-				mockConverseStreamCommand.mock.calls.length - 1
-			][0] as any
+			expect(mockStreamText).toHaveBeenCalledTimes(1)
+			const callArgs = mockStreamText.mock.calls[0][0]
 
-			// Should include anthropic_beta in additionalModelRequestFields
-			expect(commandArg.additionalModelRequestFields).toBeDefined()
-			expect(commandArg.additionalModelRequestFields.anthropic_beta).toEqual(["context-1m-2025-08-07"])
-			// Should not include anthropic_version since thinking is not enabled
-			expect(commandArg.additionalModelRequestFields.anthropic_version).toBeUndefined()
-			// Model ID should have cross-region prefix
-			expect(commandArg.modelId).toBe(`us.${BEDROCK_CLAUDE_SONNET_4_MODEL_ID}`)
+			// Should include anthropicBeta in providerOptions.bedrock with 1M context
+			const bedrockOpts = callArgs.providerOptions?.bedrock as Record<string, unknown> | undefined
+			expect(bedrockOpts).toBeDefined()
+			expect(bedrockOpts!.anthropicBeta).toContain("context-1m-2025-08-07")
+		})
+	})
+
+	describe("service tier feature", () => {
+		const supportedModelId = BEDROCK_SERVICE_TIER_MODEL_IDS[0] // amazon.nova-lite-v1:0
+
+		function setupMockStreamText() {
+			async function* mockFullStream() {
+				yield { type: "text-delta", text: "Response" }
+			}
+			mockStreamText.mockReturnValue({
+				fullStream: mockFullStream(),
+				usage: Promise.resolve({ inputTokens: 10, outputTokens: 5 }),
+				providerMetadata: Promise.resolve({}),
+			})
+		}
+
+		describe("pricing multipliers in getModel()", () => {
+			it("should apply FLEX tier pricing with 50% discount", () => {
+				const handler = new AwsBedrockHandler({
+					apiModelId: supportedModelId,
+					awsAccessKey: "test",
+					awsSecretKey: "test",
+					awsRegion: "us-east-1",
+					awsBedrockServiceTier: "FLEX",
+				})
+
+				const model = handler.getModel()
+				const baseModel = bedrockModels[supportedModelId as keyof typeof bedrockModels] as {
+					inputPrice: number
+					outputPrice: number
+				}
+
+				// FLEX tier should apply 0.5 multiplier (50% discount)
+				expect(model.info.inputPrice).toBe(baseModel.inputPrice * 0.5)
+				expect(model.info.outputPrice).toBe(baseModel.outputPrice * 0.5)
+			})
+
+			it("should apply PRIORITY tier pricing with 75% premium", () => {
+				const handler = new AwsBedrockHandler({
+					apiModelId: supportedModelId,
+					awsAccessKey: "test",
+					awsSecretKey: "test",
+					awsRegion: "us-east-1",
+					awsBedrockServiceTier: "PRIORITY",
+				})
+
+				const model = handler.getModel()
+				const baseModel = bedrockModels[supportedModelId as keyof typeof bedrockModels] as {
+					inputPrice: number
+					outputPrice: number
+				}
+
+				// PRIORITY tier should apply 1.75 multiplier (75% premium)
+				expect(model.info.inputPrice).toBe(baseModel.inputPrice * 1.75)
+				expect(model.info.outputPrice).toBe(baseModel.outputPrice * 1.75)
+			})
+
+			it("should not modify pricing for STANDARD tier", () => {
+				const handler = new AwsBedrockHandler({
+					apiModelId: supportedModelId,
+					awsAccessKey: "test",
+					awsSecretKey: "test",
+					awsRegion: "us-east-1",
+					awsBedrockServiceTier: "STANDARD",
+				})
+
+				const model = handler.getModel()
+				const baseModel = bedrockModels[supportedModelId as keyof typeof bedrockModels] as {
+					inputPrice: number
+					outputPrice: number
+				}
+
+				// STANDARD tier should not modify pricing (1.0 multiplier)
+				expect(model.info.inputPrice).toBe(baseModel.inputPrice)
+				expect(model.info.outputPrice).toBe(baseModel.outputPrice)
+			})
+
+			it("should not apply service tier pricing for unsupported models", () => {
+				const unsupportedModelId = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+				const handler = new AwsBedrockHandler({
+					apiModelId: unsupportedModelId,
+					awsAccessKey: "test",
+					awsSecretKey: "test",
+					awsRegion: "us-east-1",
+					awsBedrockServiceTier: "FLEX", // Try to apply FLEX tier
+				})
+
+				const model = handler.getModel()
+				const baseModel = bedrockModels[unsupportedModelId as keyof typeof bedrockModels] as {
+					inputPrice: number
+					outputPrice: number
+				}
+
+				// Pricing should remain unchanged for unsupported models
+				expect(model.info.inputPrice).toBe(baseModel.inputPrice)
+				expect(model.info.outputPrice).toBe(baseModel.outputPrice)
+			})
+		})
+
+		describe("service_tier parameter in API requests", () => {
+			it("should include service_tier in providerOptions.bedrock.additionalModelRequestFields for supported models", async () => {
+				setupMockStreamText()
+
+				const handler = new AwsBedrockHandler({
+					apiModelId: supportedModelId,
+					awsAccessKey: "test",
+					awsSecretKey: "test",
+					awsRegion: "us-east-1",
+					awsBedrockServiceTier: "PRIORITY",
+				})
+
+				const messages: Anthropic.Messages.MessageParam[] = [
+					{
+						role: "user",
+						content: "Test message",
+					},
+				]
+
+				const generator = handler.createMessage("", messages)
+				const chunks: unknown[] = []
+				for await (const chunk of generator) {
+					chunks.push(chunk)
+				}
+
+				expect(mockStreamText).toHaveBeenCalledTimes(1)
+				const callArgs = mockStreamText.mock.calls[0][0]
+
+				// service_tier should be passed through providerOptions.bedrock.additionalModelRequestFields
+				const bedrockOpts = callArgs.providerOptions?.bedrock as Record<string, unknown> | undefined
+				expect(bedrockOpts).toBeDefined()
+				const additionalFields = bedrockOpts!.additionalModelRequestFields as
+					| Record<string, unknown>
+					| undefined
+				expect(additionalFields).toBeDefined()
+				expect(additionalFields!.service_tier).toBe("PRIORITY")
+			})
+
+			it("should include service_tier FLEX in providerOptions", async () => {
+				setupMockStreamText()
+
+				const handler = new AwsBedrockHandler({
+					apiModelId: supportedModelId,
+					awsAccessKey: "test",
+					awsSecretKey: "test",
+					awsRegion: "us-east-1",
+					awsBedrockServiceTier: "FLEX",
+				})
+
+				const messages: Anthropic.Messages.MessageParam[] = [
+					{
+						role: "user",
+						content: "Test message",
+					},
+				]
+
+				const generator = handler.createMessage("", messages)
+				const chunks: unknown[] = []
+				for await (const chunk of generator) {
+					chunks.push(chunk)
+				}
+
+				expect(mockStreamText).toHaveBeenCalledTimes(1)
+				const callArgs = mockStreamText.mock.calls[0][0]
+
+				const bedrockOpts = callArgs.providerOptions?.bedrock as Record<string, unknown> | undefined
+				expect(bedrockOpts).toBeDefined()
+				const additionalFields = bedrockOpts!.additionalModelRequestFields as
+					| Record<string, unknown>
+					| undefined
+				expect(additionalFields).toBeDefined()
+				expect(additionalFields!.service_tier).toBe("FLEX")
+			})
+
+			it("should NOT include service_tier for unsupported models", async () => {
+				setupMockStreamText()
+
+				const unsupportedModelId = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+				const handler = new AwsBedrockHandler({
+					apiModelId: unsupportedModelId,
+					awsAccessKey: "test",
+					awsSecretKey: "test",
+					awsRegion: "us-east-1",
+					awsBedrockServiceTier: "PRIORITY", // Try to apply PRIORITY tier
+				})
+
+				const messages: Anthropic.Messages.MessageParam[] = [
+					{
+						role: "user",
+						content: "Test message",
+					},
+				]
+
+				const generator = handler.createMessage("", messages)
+				const chunks: unknown[] = []
+				for await (const chunk of generator) {
+					chunks.push(chunk)
+				}
+
+				expect(mockStreamText).toHaveBeenCalledTimes(1)
+				const callArgs = mockStreamText.mock.calls[0][0]
+
+				// Service tier should NOT be included for unsupported models
+				const bedrockOpts = callArgs.providerOptions?.bedrock as Record<string, unknown> | undefined
+				if (bedrockOpts?.additionalModelRequestFields) {
+					const additionalFields = bedrockOpts.additionalModelRequestFields as Record<string, unknown>
+					expect(additionalFields.service_tier).toBeUndefined()
+				}
+			})
+
+			it("should NOT include service_tier when not specified", async () => {
+				setupMockStreamText()
+
+				const handler = new AwsBedrockHandler({
+					apiModelId: supportedModelId,
+					awsAccessKey: "test",
+					awsSecretKey: "test",
+					awsRegion: "us-east-1",
+					// No awsBedrockServiceTier specified
+				})
+
+				const messages: Anthropic.Messages.MessageParam[] = [
+					{
+						role: "user",
+						content: "Test message",
+					},
+				]
+
+				const generator = handler.createMessage("", messages)
+				const chunks: unknown[] = []
+				for await (const chunk of generator) {
+					chunks.push(chunk)
+				}
+
+				expect(mockStreamText).toHaveBeenCalledTimes(1)
+				const callArgs = mockStreamText.mock.calls[0][0]
+
+				// Service tier should NOT be included when not specified
+				const bedrockOpts = callArgs.providerOptions?.bedrock as Record<string, unknown> | undefined
+				if (bedrockOpts?.additionalModelRequestFields) {
+					const additionalFields = bedrockOpts.additionalModelRequestFields as Record<string, unknown>
+					expect(additionalFields.service_tier).toBeUndefined()
+				}
+			})
+		})
+
+		describe("service tier with cross-region inference", () => {
+			it("should apply service tier pricing with cross-region inference prefix", () => {
+				const handler = new AwsBedrockHandler({
+					apiModelId: supportedModelId,
+					awsAccessKey: "test",
+					awsSecretKey: "test",
+					awsRegion: "us-east-1",
+					awsUseCrossRegionInference: true,
+					awsBedrockServiceTier: "FLEX",
+				})
+
+				const model = handler.getModel()
+				const baseModel = bedrockModels[supportedModelId as keyof typeof bedrockModels] as {
+					inputPrice: number
+					outputPrice: number
+				}
+
+				// Model ID should have cross-region prefix
+				expect(model.id).toBe(`us.${supportedModelId}`)
+
+				// FLEX tier pricing should still be applied
+				expect(model.info.inputPrice).toBe(baseModel.inputPrice * 0.5)
+				expect(model.info.outputPrice).toBe(baseModel.outputPrice * 0.5)
+			})
+		})
+	})
+
+	describe("error telemetry", () => {
+		beforeEach(() => {
+			mockCaptureException.mockClear()
+		})
+
+		it("should capture telemetry on createMessage error", async () => {
+			// Mock streamText to throw an error
+			mockStreamText.mockImplementation(() => {
+				throw new Error("Bedrock API error")
+			})
+
+			const errorHandler = new AwsBedrockHandler({
+				apiModelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+				awsAccessKey: "test-access-key",
+				awsSecretKey: "test-secret-key",
+				awsRegion: "us-east-1",
+			})
+
+			const messages: Anthropic.Messages.MessageParam[] = [
+				{
+					role: "user",
+					content: "Hello",
+				},
+			]
+
+			const generator = errorHandler.createMessage("You are a helpful assistant", messages)
+
+			// Consume the generator - it should throw
+			await expect(async () => {
+				for await (const _chunk of generator) {
+					// Should throw before or during iteration
+				}
+			}).rejects.toThrow()
+
+			// Verify telemetry was captured
+			expect(mockCaptureException).toHaveBeenCalledTimes(1)
+			expect(mockCaptureException).toHaveBeenCalledWith(
+				expect.objectContaining({
+					message: "Bedrock API error",
+					provider: "Bedrock",
+					modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+					operation: "createMessage",
+				}),
+			)
+
+			// Verify it's an ApiProviderError
+			const capturedError = mockCaptureException.mock.calls[0][0]
+			expect(capturedError).toBeInstanceOf(ApiProviderError)
+		})
+
+		it("should capture telemetry on completePrompt error", async () => {
+			// Mock generateText to throw an error
+			mockGenerateText.mockRejectedValueOnce(new Error("Bedrock completion error"))
+
+			const errorHandler = new AwsBedrockHandler({
+				apiModelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+				awsAccessKey: "test-access-key",
+				awsSecretKey: "test-secret-key",
+				awsRegion: "us-east-1",
+			})
+
+			// Call completePrompt - it should throw
+			await expect(errorHandler.completePrompt("Test prompt")).rejects.toThrow()
+
+			// Verify telemetry was captured
+			expect(mockCaptureException).toHaveBeenCalledTimes(1)
+			expect(mockCaptureException).toHaveBeenCalledWith(
+				expect.objectContaining({
+					message: "Bedrock completion error",
+					provider: "Bedrock",
+					modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+					operation: "completePrompt",
+				}),
+			)
+
+			// Verify it's an ApiProviderError
+			const capturedError = mockCaptureException.mock.calls[0][0]
+			expect(capturedError).toBeInstanceOf(ApiProviderError)
+		})
+
+		it("should still throw the error after capturing telemetry", async () => {
+			// Mock streamText to throw an error
+			mockStreamText.mockImplementation(() => {
+				throw new Error("Test error for throw verification")
+			})
+
+			const errorHandler = new AwsBedrockHandler({
+				apiModelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+				awsAccessKey: "test-access-key",
+				awsSecretKey: "test-secret-key",
+				awsRegion: "us-east-1",
+			})
+
+			const messages: Anthropic.Messages.MessageParam[] = [
+				{
+					role: "user",
+					content: "Hello",
+				},
+			]
+
+			const generator = errorHandler.createMessage("You are a helpful assistant", messages)
+
+			// Verify the error is still thrown after telemetry capture
+			await expect(async () => {
+				for await (const _chunk of generator) {
+					// Should throw
+				}
+			}).rejects.toThrow()
+
+			// Telemetry should have been captured before the error was thrown
+			expect(mockCaptureException).toHaveBeenCalled()
 		})
 	})
 })

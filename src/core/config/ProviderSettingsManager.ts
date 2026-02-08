@@ -10,10 +10,24 @@ import {
 	ProviderSettingsEntry,
 	DEFAULT_CONSECUTIVE_MISTAKE_LIMIT,
 	getModelId,
+	type ProviderName,
+	isProviderName,
 } from "@roo-code/types"
 import { TelemetryService } from "@roo-code/telemetry"
 
 import { Mode, modes } from "../../shared/modes"
+import { buildApiHandler } from "../../api"
+
+// Type-safe model migrations mapping
+type ModelMigrations = {
+	[K in ProviderName]?: Record<string, string>
+}
+
+const MODEL_MIGRATIONS: ModelMigrations = {
+	roo: {
+		"roo/code-supernova": "roo/code-supernova-1-million",
+	},
+} as const satisfies ModelMigrations
 
 export interface SyncCloudProfilesResult {
 	hasChanges: boolean
@@ -29,10 +43,10 @@ export const providerProfilesSchema = z.object({
 	migrations: z
 		.object({
 			rateLimitSecondsMigrated: z.boolean().optional(),
-			diffSettingsMigrated: z.boolean().optional(),
 			openAiHeadersMigrated: z.boolean().optional(),
 			consecutiveMistakeLimitMigrated: z.boolean().optional(),
 			todoListEnabledMigrated: z.boolean().optional(),
+			claudeCodeLegacySettingsMigrated: z.boolean().optional(),
 		})
 		.optional(),
 })
@@ -53,10 +67,10 @@ export class ProviderSettingsManager {
 		modeApiConfigs: this.defaultModeApiConfigs,
 		migrations: {
 			rateLimitSecondsMigrated: true, // Mark as migrated on fresh installs
-			diffSettingsMigrated: true, // Mark as migrated on fresh installs
 			openAiHeadersMigrated: true, // Mark as migrated on fresh installs
 			consecutiveMistakeLimitMigrated: true, // Mark as migrated on fresh installs
 			todoListEnabledMigrated: true, // Mark as migrated on fresh installs
+			claudeCodeLegacySettingsMigrated: true, // Mark as migrated on fresh installs
 		},
 	}
 
@@ -108,6 +122,11 @@ export class ProviderSettingsManager {
 					isDirty = true
 				}
 
+				// Apply model migrations for all providers
+				if (this.applyModelMigrations(providerProfiles)) {
+					isDirty = true
+				}
+
 				// Ensure all configs have IDs.
 				for (const [_name, apiConfig] of Object.entries(providerProfiles.apiConfigs)) {
 					if (!apiConfig.id) {
@@ -120,10 +139,10 @@ export class ProviderSettingsManager {
 				if (!providerProfiles.migrations) {
 					providerProfiles.migrations = {
 						rateLimitSecondsMigrated: false,
-						diffSettingsMigrated: false,
 						openAiHeadersMigrated: false,
 						consecutiveMistakeLimitMigrated: false,
 						todoListEnabledMigrated: false,
+						claudeCodeLegacySettingsMigrated: false,
 					} // Initialize with default values
 					isDirty = true
 				}
@@ -131,12 +150,6 @@ export class ProviderSettingsManager {
 				if (!providerProfiles.migrations.rateLimitSecondsMigrated) {
 					await this.migrateRateLimitSeconds(providerProfiles)
 					providerProfiles.migrations.rateLimitSecondsMigrated = true
-					isDirty = true
-				}
-
-				if (!providerProfiles.migrations.diffSettingsMigrated) {
-					await this.migrateDiffSettings(providerProfiles)
-					providerProfiles.migrations.diffSettingsMigrated = true
 					isDirty = true
 				}
 
@@ -155,6 +168,27 @@ export class ProviderSettingsManager {
 				if (!providerProfiles.migrations.todoListEnabledMigrated) {
 					await this.migrateTodoListEnabled(providerProfiles)
 					providerProfiles.migrations.todoListEnabledMigrated = true
+					isDirty = true
+				}
+
+				if (!providerProfiles.migrations.claudeCodeLegacySettingsMigrated) {
+					// These keys were used by the removed local Claude Code CLI wrapper.
+					for (const apiConfig of Object.values(providerProfiles.apiConfigs)) {
+						// Cast to string for comparison since "claude-code" is no longer a valid ProviderName
+						if ((apiConfig.apiProvider as string) !== "claude-code") continue
+
+						const config = apiConfig as unknown as Record<string, unknown>
+						if ("claudeCodePath" in config) {
+							delete config.claudeCodePath
+							isDirty = true
+						}
+						if ("claudeCodeMaxOutputTokens" in config) {
+							delete config.claudeCodeMaxOutputTokens
+							isDirty = true
+						}
+					}
+
+					providerProfiles.migrations.claudeCodeLegacySettingsMigrated = true
 					isDirty = true
 				}
 
@@ -189,41 +223,6 @@ export class ProviderSettingsManager {
 			}
 		} catch (error) {
 			console.error(`[MigrateRateLimitSeconds] Failed to migrate rate limit settings:`, error)
-		}
-	}
-
-	private async migrateDiffSettings(providerProfiles: ProviderProfiles) {
-		try {
-			let diffEnabled: boolean | undefined
-			let fuzzyMatchThreshold: number | undefined
-
-			try {
-				diffEnabled = await this.context.globalState.get<boolean>("diffEnabled")
-				fuzzyMatchThreshold = await this.context.globalState.get<number>("fuzzyMatchThreshold")
-			} catch (error) {
-				console.error("[MigrateDiffSettings] Error getting global diff settings:", error)
-			}
-
-			if (diffEnabled === undefined) {
-				// Failed to get the existing value, use the default.
-				diffEnabled = true
-			}
-
-			if (fuzzyMatchThreshold === undefined) {
-				// Failed to get the existing value, use the default.
-				fuzzyMatchThreshold = 1.0
-			}
-
-			for (const [_name, apiConfig] of Object.entries(providerProfiles.apiConfigs)) {
-				if (apiConfig.diffEnabled === undefined) {
-					apiConfig.diffEnabled = diffEnabled
-				}
-				if (apiConfig.fuzzyMatchThreshold === undefined) {
-					apiConfig.fuzzyMatchThreshold = fuzzyMatchThreshold
-				}
-			}
-		} catch (error) {
-			console.error(`[MigrateDiffSettings] Failed to migrate diff settings:`, error)
 		}
 	}
 
@@ -273,6 +272,44 @@ export class ProviderSettingsManager {
 		} catch (error) {
 			console.error(`[MigrateTodoListEnabled] Failed to migrate todo list enabled setting:`, error)
 		}
+	}
+
+	/**
+	 * Apply model migrations for all providers
+	 * Returns true if any migrations were applied
+	 */
+	private applyModelMigrations(providerProfiles: ProviderProfiles): boolean {
+		let migrated = false
+
+		try {
+			for (const [_name, apiConfig] of Object.entries(providerProfiles.apiConfigs)) {
+				// Skip configs without provider or model ID
+				if (!apiConfig.apiProvider || !apiConfig.apiModelId) {
+					continue
+				}
+
+				// Check if this provider has migrations (with type safety)
+				const provider = apiConfig.apiProvider as ProviderName
+				const providerMigrations = MODEL_MIGRATIONS[provider]
+				if (!providerMigrations) {
+					continue
+				}
+
+				// Check if the current model ID needs migration
+				const newModelId = providerMigrations[apiConfig.apiModelId]
+				if (newModelId && newModelId !== apiConfig.apiModelId) {
+					console.log(
+						`[ModelMigration] Migrating ${apiConfig.apiProvider} model from ${apiConfig.apiModelId} to ${newModelId}`,
+					)
+					apiConfig.apiModelId = newModelId
+					migrated = true
+				}
+			}
+		} catch (error) {
+			console.error(`[ModelMigration] Failed to apply model migrations:`, error)
+		}
+
+		return migrated
 	}
 
 	/**
@@ -472,6 +509,31 @@ export class ProviderSettingsManager {
 				for (const name in configs) {
 					// Avoid leaking properties from other providers.
 					configs[name] = discriminatedProviderSettingsWithIdSchema.parse(configs[name])
+
+					// If it has no apiProvider, skip filtering
+					if (!configs[name].apiProvider) {
+						continue
+					}
+
+					// Try to build an API handler to get model information
+					try {
+						const apiHandler = buildApiHandler(configs[name])
+						const modelInfo = apiHandler.getModel().info
+
+						// Check if the model supports reasoning budgets
+						const supportsReasoningBudget =
+							modelInfo.supportsReasoningBudget || modelInfo.requiredReasoningBudget
+
+						// If the model doesn't support reasoning budgets, remove the token fields
+						if (!supportsReasoningBudget) {
+							delete configs[name].modelMaxTokens
+							delete configs[name].modelMaxThinkingTokens
+						}
+					} catch (error) {
+						// If we can't build the API handler or get model info, skip filtering
+						// to avoid accidental data loss from incomplete configurations
+						console.warn(`Skipping token field filtering for config '${name}': ${error}`)
+					}
 				}
 				return profiles
 			})
@@ -517,7 +579,10 @@ export class ProviderSettingsManager {
 
 			const apiConfigs = Object.entries(providerProfiles.apiConfigs).reduce(
 				(acc, [key, apiConfig]) => {
-					const result = providerSettingsWithIdSchema.safeParse(apiConfig)
+					// First, sanitize invalid apiProvider values before parsing
+					// This handles removed providers (like "glama") gracefully
+					const sanitizedConfig = this.sanitizeProviderConfig(apiConfig)
+					const result = providerSettingsWithIdSchema.safeParse(sanitizedConfig)
 					return result.success ? { ...acc, [key]: result.data } : acc
 				},
 				{} as Record<string, ProviderSettingsWithId>,
@@ -539,6 +604,32 @@ export class ProviderSettingsManager {
 
 			throw new Error(`Failed to read provider profiles from secrets: ${error}`)
 		}
+	}
+
+	/**
+	 * Sanitizes a provider config by resetting invalid/removed apiProvider values.
+	 * This handles cases where a user had a provider selected that was later removed
+	 * from the extension (e.g., "glama").
+	 */
+	private sanitizeProviderConfig(apiConfig: unknown): unknown {
+		if (typeof apiConfig !== "object" || apiConfig === null) {
+			return apiConfig
+		}
+
+		const config = apiConfig as Record<string, unknown>
+
+		// Check if apiProvider is set and if it's still valid
+		if (config.apiProvider !== undefined && !isProviderName(config.apiProvider)) {
+			console.log(
+				`[ProviderSettingsManager] Sanitizing invalid provider "${config.apiProvider}" - resetting to undefined`,
+			)
+			// Return a new config object without the invalid apiProvider
+			// This effectively resets the profile so the user can select a valid provider
+			const { apiProvider, ...restConfig } = config
+			return restConfig
+		}
+
+		return apiConfig
 	}
 
 	private async store(providerProfiles: ProviderProfiles) {

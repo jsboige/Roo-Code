@@ -21,7 +21,18 @@ vitest.mock("../fetchers/modelCache", () => ({
 				cacheReadsPrice: 0.3,
 				description: "Claude 3.5 Sonnet",
 				thinking: false,
-				supportsComputerUse: true,
+			},
+			"anthropic/claude-sonnet-4-5": {
+				maxTokens: 8192,
+				contextWindow: 200000,
+				supportsImages: true,
+				supportsPromptCache: true,
+				inputPrice: 3,
+				outputPrice: 15,
+				cacheWritesPrice: 3.75,
+				cacheReadsPrice: 0.3,
+				description: "Claude 4.5 Sonnet",
+				thinking: false,
 			},
 			"anthropic/claude-3-7-sonnet-20250219": {
 				maxTokens: 8192,
@@ -34,7 +45,6 @@ vitest.mock("../fetchers/modelCache", () => ({
 				cacheReadsPrice: 0.3,
 				description: "Claude 3.7 Sonnet",
 				thinking: false,
-				supportsComputerUse: true,
 			},
 			"openai/gpt-4o": {
 				maxTokens: 4096,
@@ -56,6 +66,7 @@ vitest.mock("../fetchers/modelCache", () => ({
 			},
 		})
 	}),
+	getModelsFromCache: vitest.fn().mockReturnValue(undefined),
 }))
 
 // Mock OpenAI client
@@ -314,8 +325,225 @@ describe("UnboundHandler", () => {
 		it("should return default model when invalid model provided", async () => {
 			const handlerWithInvalidModel = new UnboundHandler({ ...mockOptions, unboundModelId: "invalid/model" })
 			const modelInfo = await handlerWithInvalidModel.fetchModel()
-			expect(modelInfo.id).toBe("anthropic/claude-3-7-sonnet-20250219")
+			expect(modelInfo.id).toBe("anthropic/claude-sonnet-4-5")
 			expect(modelInfo.info).toBeDefined()
+		})
+	})
+
+	describe("Native Tool Calling", () => {
+		const testTools = [
+			{
+				type: "function" as const,
+				function: {
+					name: "test_tool",
+					description: "A test tool",
+					parameters: {
+						type: "object",
+						properties: {
+							arg1: { type: "string", description: "First argument" },
+						},
+						required: ["arg1"],
+					},
+				},
+			},
+		]
+
+		it("should include tools in request when tools are provided", async () => {
+			mockWithResponse.mockResolvedValueOnce({
+				data: {
+					[Symbol.asyncIterator]: () => ({
+						async next() {
+							return { done: true }
+						},
+					}),
+				},
+			})
+
+			const messageGenerator = handler.createMessage("test prompt", [], {
+				taskId: "test-task-id",
+				tools: testTools,
+			})
+			await messageGenerator.next()
+
+			expect(mockCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					tools: expect.arrayContaining([
+						expect.objectContaining({
+							type: "function",
+							function: expect.objectContaining({
+								name: "test_tool",
+							}),
+						}),
+					]),
+					parallel_tool_calls: true,
+				}),
+				expect.objectContaining({
+					headers: {
+						"X-Unbound-Metadata": expect.stringContaining("roo-code"),
+					},
+				}),
+			)
+		})
+
+		it("should include tool_choice when provided", async () => {
+			mockWithResponse.mockResolvedValueOnce({
+				data: {
+					[Symbol.asyncIterator]: () => ({
+						async next() {
+							return { done: true }
+						},
+					}),
+				},
+			})
+
+			const messageGenerator = handler.createMessage("test prompt", [], {
+				taskId: "test-task-id",
+				tools: testTools,
+				tool_choice: "auto",
+			})
+			await messageGenerator.next()
+
+			expect(mockCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					tool_choice: "auto",
+				}),
+				expect.objectContaining({
+					headers: {
+						"X-Unbound-Metadata": expect.stringContaining("roo-code"),
+					},
+				}),
+			)
+		})
+
+		it("should always include tools and tool_choice (tools are guaranteed to be present after ALWAYS_AVAILABLE_TOOLS)", async () => {
+			mockWithResponse.mockResolvedValueOnce({
+				data: {
+					[Symbol.asyncIterator]: () => ({
+						async next() {
+							return { done: true }
+						},
+					}),
+				},
+			})
+
+			const messageGenerator = handler.createMessage("test prompt", [], {
+				taskId: "test-task-id",
+			})
+			await messageGenerator.next()
+
+			// Tools are now always present (minimum 6 from ALWAYS_AVAILABLE_TOOLS)
+			const callArgs = mockCreate.mock.calls[mockCreate.mock.calls.length - 1][0]
+			expect(callArgs).toHaveProperty("tools")
+			expect(callArgs).toHaveProperty("tool_choice")
+			expect(callArgs).toHaveProperty("parallel_tool_calls", true)
+		})
+
+		it("should yield tool_call_partial chunks during streaming", async () => {
+			mockWithResponse.mockResolvedValueOnce({
+				data: {
+					[Symbol.asyncIterator]: () => ({
+						next: vi
+							.fn()
+							.mockResolvedValueOnce({
+								done: false,
+								value: {
+									choices: [
+										{
+											delta: {
+												tool_calls: [
+													{
+														index: 0,
+														id: "call_123",
+														function: {
+															name: "test_tool",
+															arguments: '{"arg1":',
+														},
+													},
+												],
+											},
+										},
+									],
+								},
+							})
+							.mockResolvedValueOnce({
+								done: false,
+								value: {
+									choices: [
+										{
+											delta: {
+												tool_calls: [
+													{
+														index: 0,
+														function: {
+															arguments: '"value"}',
+														},
+													},
+												],
+											},
+										},
+									],
+								},
+							})
+							.mockResolvedValueOnce({ done: true }),
+					}),
+				},
+			})
+
+			const stream = handler.createMessage("test prompt", [], {
+				taskId: "test-task-id",
+				tools: testTools,
+			})
+
+			const chunks = []
+			for await (const chunk of stream) {
+				chunks.push(chunk)
+			}
+
+			expect(chunks).toContainEqual({
+				type: "tool_call_partial",
+				index: 0,
+				id: "call_123",
+				name: "test_tool",
+				arguments: '{"arg1":',
+			})
+
+			expect(chunks).toContainEqual({
+				type: "tool_call_partial",
+				index: 0,
+				id: undefined,
+				name: undefined,
+				arguments: '"value"}',
+			})
+		})
+
+		it("should set parallel_tool_calls based on metadata", async () => {
+			mockWithResponse.mockResolvedValueOnce({
+				data: {
+					[Symbol.asyncIterator]: () => ({
+						async next() {
+							return { done: true }
+						},
+					}),
+				},
+			})
+
+			const messageGenerator = handler.createMessage("test prompt", [], {
+				taskId: "test-task-id",
+				tools: testTools,
+				parallelToolCalls: true,
+			})
+			await messageGenerator.next()
+
+			expect(mockCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					parallel_tool_calls: true,
+				}),
+				expect.objectContaining({
+					headers: {
+						"X-Unbound-Metadata": expect.stringContaining("roo-code"),
+					},
+				}),
+			)
 		})
 	})
 })

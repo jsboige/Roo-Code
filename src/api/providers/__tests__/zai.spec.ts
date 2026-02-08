@@ -1,10 +1,30 @@
 // npx vitest run src/api/providers/__tests__/zai.spec.ts
 
-// Mock vscode first to avoid import errors
-vitest.mock("vscode", () => ({}))
+// Use vi.hoisted to define mock functions that can be referenced in hoisted vi.mock() calls
+const { mockStreamText, mockGenerateText } = vi.hoisted(() => ({
+	mockStreamText: vi.fn(),
+	mockGenerateText: vi.fn(),
+}))
 
-import OpenAI from "openai"
-import { Anthropic } from "@anthropic-ai/sdk"
+vi.mock("ai", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("ai")>()
+	return {
+		...actual,
+		streamText: mockStreamText,
+		generateText: mockGenerateText,
+	}
+})
+
+vi.mock("zhipu-ai-provider", () => ({
+	createZhipu: vi.fn(() => {
+		return vi.fn(() => ({
+			modelId: "glm-4.6",
+			provider: "zhipu",
+		}))
+	}),
+}))
+
+import type { Anthropic } from "@anthropic-ai/sdk"
 
 import {
 	type InternationalZAiModelId,
@@ -16,42 +36,41 @@ import {
 	ZAI_DEFAULT_TEMPERATURE,
 } from "@roo-code/types"
 
-import { ZAiHandler } from "../zai"
+import type { ApiHandlerOptions } from "../../../shared/api"
 
-vitest.mock("openai", () => {
-	const createMock = vitest.fn()
-	return {
-		default: vitest.fn(() => ({ chat: { completions: { create: createMock } } })),
-	}
-})
+import { ZAiHandler } from "../zai"
 
 describe("ZAiHandler", () => {
 	let handler: ZAiHandler
-	let mockCreate: any
+	let mockOptions: ApiHandlerOptions
 
 	beforeEach(() => {
-		vitest.clearAllMocks()
-		mockCreate = (OpenAI as unknown as any)().chat.completions.create
+		mockOptions = {
+			zaiApiKey: "test-zai-api-key",
+			zaiApiLine: "international_coding",
+			apiModelId: "glm-4.6",
+		}
+		handler = new ZAiHandler(mockOptions)
+		vi.clearAllMocks()
+	})
+
+	describe("constructor", () => {
+		it("should initialize with provided options", () => {
+			expect(handler).toBeInstanceOf(ZAiHandler)
+			expect(handler.getModel().id).toBe(mockOptions.apiModelId)
+		})
+
+		it("should default to international when no zaiApiLine is specified", () => {
+			const handlerDefault = new ZAiHandler({ zaiApiKey: "test-zai-api-key" })
+			const model = handlerDefault.getModel()
+			expect(model.id).toBe(internationalZAiDefaultModelId)
+			expect(model.info).toEqual(internationalZAiModels[internationalZAiDefaultModelId])
+		})
 	})
 
 	describe("International Z AI", () => {
 		beforeEach(() => {
-			handler = new ZAiHandler({ zaiApiKey: "test-zai-api-key", zaiApiLine: "international" })
-		})
-
-		it("should use the correct international Z AI base URL", () => {
-			new ZAiHandler({ zaiApiKey: "test-zai-api-key", zaiApiLine: "international" })
-			expect(OpenAI).toHaveBeenCalledWith(
-				expect.objectContaining({
-					baseURL: "https://api.z.ai/api/paas/v4",
-				}),
-			)
-		})
-
-		it("should use the provided API key for international", () => {
-			const zaiApiKey = "test-zai-api-key"
-			new ZAiHandler({ zaiApiKey, zaiApiLine: "international" })
-			expect(OpenAI).toHaveBeenCalledWith(expect.objectContaining({ apiKey: zaiApiKey }))
+			handler = new ZAiHandler({ zaiApiKey: "test-zai-api-key", zaiApiLine: "international_coding" })
 		})
 
 		it("should return international default model when no model is specified", () => {
@@ -65,30 +84,61 @@ describe("ZAiHandler", () => {
 			const handlerWithModel = new ZAiHandler({
 				apiModelId: testModelId,
 				zaiApiKey: "test-zai-api-key",
-				zaiApiLine: "international",
+				zaiApiLine: "international_coding",
 			})
 			const model = handlerWithModel.getModel()
 			expect(model.id).toBe(testModelId)
 			expect(model.info).toEqual(internationalZAiModels[testModelId])
 		})
+
+		it("should return GLM-4.6 international model with correct configuration", () => {
+			const testModelId: InternationalZAiModelId = "glm-4.6"
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: testModelId,
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+			})
+			const model = handlerWithModel.getModel()
+			expect(model.id).toBe(testModelId)
+			expect(model.info).toEqual(internationalZAiModels[testModelId])
+			expect(model.info.contextWindow).toBe(200_000)
+		})
+
+		it("should return GLM-4.7 international model with thinking support", () => {
+			const testModelId: InternationalZAiModelId = "glm-4.7"
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: testModelId,
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+			})
+			const model = handlerWithModel.getModel()
+			expect(model.id).toBe(testModelId)
+			expect(model.info).toEqual(internationalZAiModels[testModelId])
+			expect(model.info.contextWindow).toBe(200_000)
+			expect(model.info.supportsReasoningEffort).toEqual(["disable", "medium"])
+			expect(model.info.reasoningEffort).toBe("medium")
+			expect(model.info.preserveReasoning).toBe(true)
+		})
+
+		it("should return GLM-4.5v international model with vision support", () => {
+			const testModelId: InternationalZAiModelId = "glm-4.5v"
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: testModelId,
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+			})
+			const model = handlerWithModel.getModel()
+			expect(model.id).toBe(testModelId)
+			expect(model.info).toEqual(internationalZAiModels[testModelId])
+			expect(model.info.supportsImages).toBe(true)
+			expect(model.info.maxTokens).toBe(16_384)
+			expect(model.info.contextWindow).toBe(131_072)
+		})
 	})
 
 	describe("China Z AI", () => {
 		beforeEach(() => {
-			handler = new ZAiHandler({ zaiApiKey: "test-zai-api-key", zaiApiLine: "china" })
-		})
-
-		it("should use the correct China Z AI base URL", () => {
-			new ZAiHandler({ zaiApiKey: "test-zai-api-key", zaiApiLine: "china" })
-			expect(OpenAI).toHaveBeenCalledWith(
-				expect.objectContaining({ baseURL: "https://open.bigmodel.cn/api/paas/v4" }),
-			)
-		})
-
-		it("should use the provided API key for China", () => {
-			const zaiApiKey = "test-zai-api-key"
-			new ZAiHandler({ zaiApiKey, zaiApiLine: "china" })
-			expect(OpenAI).toHaveBeenCalledWith(expect.objectContaining({ apiKey: zaiApiKey }))
+			handler = new ZAiHandler({ zaiApiKey: "test-zai-api-key", zaiApiLine: "china_coding" })
 		})
 
 		it("should return China default model when no model is specified", () => {
@@ -102,7 +152,99 @@ describe("ZAiHandler", () => {
 			const handlerWithModel = new ZAiHandler({
 				apiModelId: testModelId,
 				zaiApiKey: "test-zai-api-key",
-				zaiApiLine: "china",
+				zaiApiLine: "china_coding",
+			})
+			const model = handlerWithModel.getModel()
+			expect(model.id).toBe(testModelId)
+			expect(model.info).toEqual(mainlandZAiModels[testModelId])
+		})
+
+		it("should return GLM-4.6 China model with correct configuration", () => {
+			const testModelId: MainlandZAiModelId = "glm-4.6"
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: testModelId,
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "china_coding",
+			})
+			const model = handlerWithModel.getModel()
+			expect(model.id).toBe(testModelId)
+			expect(model.info).toEqual(mainlandZAiModels[testModelId])
+			expect(model.info.contextWindow).toBe(204_800)
+		})
+
+		it("should return GLM-4.5v China model with vision support", () => {
+			const testModelId: MainlandZAiModelId = "glm-4.5v"
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: testModelId,
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "china_coding",
+			})
+			const model = handlerWithModel.getModel()
+			expect(model.id).toBe(testModelId)
+			expect(model.info).toEqual(mainlandZAiModels[testModelId])
+			expect(model.info.supportsImages).toBe(true)
+			expect(model.info.maxTokens).toBe(16_384)
+			expect(model.info.contextWindow).toBe(131_072)
+		})
+
+		it("should return GLM-4.7 China model with thinking support", () => {
+			const testModelId: MainlandZAiModelId = "glm-4.7"
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: testModelId,
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "china_coding",
+			})
+			const model = handlerWithModel.getModel()
+			expect(model.id).toBe(testModelId)
+			expect(model.info).toEqual(mainlandZAiModels[testModelId])
+			expect(model.info.contextWindow).toBe(204_800)
+			expect(model.info.supportsReasoningEffort).toEqual(["disable", "medium"])
+			expect(model.info.reasoningEffort).toBe("medium")
+			expect(model.info.preserveReasoning).toBe(true)
+		})
+	})
+
+	describe("International API", () => {
+		beforeEach(() => {
+			handler = new ZAiHandler({ zaiApiKey: "test-zai-api-key", zaiApiLine: "international_api" })
+		})
+
+		it("should return international default model when no model is specified", () => {
+			const model = handler.getModel()
+			expect(model.id).toBe(internationalZAiDefaultModelId)
+			expect(model.info).toEqual(internationalZAiModels[internationalZAiDefaultModelId])
+		})
+
+		it("should return specified international model when valid model is provided", () => {
+			const testModelId: InternationalZAiModelId = "glm-4.5-air"
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: testModelId,
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_api",
+			})
+			const model = handlerWithModel.getModel()
+			expect(model.id).toBe(testModelId)
+			expect(model.info).toEqual(internationalZAiModels[testModelId])
+		})
+	})
+
+	describe("China API", () => {
+		beforeEach(() => {
+			handler = new ZAiHandler({ zaiApiKey: "test-zai-api-key", zaiApiLine: "china_api" })
+		})
+
+		it("should return China default model when no model is specified", () => {
+			const model = handler.getModel()
+			expect(model.id).toBe(mainlandZAiDefaultModelId)
+			expect(model.info).toEqual(mainlandZAiModels[mainlandZAiDefaultModelId])
+		})
+
+		it("should return specified China model when valid model is provided", () => {
+			const testModelId: MainlandZAiModelId = "glm-4.5-air"
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: testModelId,
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "china_api",
 			})
 			const model = handlerWithModel.getModel()
 			expect(model.id).toBe(testModelId)
@@ -110,131 +252,281 @@ describe("ZAiHandler", () => {
 		})
 	})
 
-	describe("Default behavior", () => {
-		it("should default to international when no zaiApiLine is specified", () => {
-			const handlerDefault = new ZAiHandler({ zaiApiKey: "test-zai-api-key" })
-			expect(OpenAI).toHaveBeenCalledWith(
-				expect.objectContaining({
-					baseURL: "https://api.z.ai/api/coding/paas/v4",
-				}),
-			)
-
-			const model = handlerDefault.getModel()
-			expect(model.id).toBe(internationalZAiDefaultModelId)
-			expect(model.info).toEqual(internationalZAiModels[internationalZAiDefaultModelId])
-		})
-
-		it("should use 'not-provided' as default API key when none is specified", () => {
-			new ZAiHandler({ zaiApiLine: "international" })
-			expect(OpenAI).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "not-provided" }))
+	describe("getModel", () => {
+		it("should include model parameters from getModelParams", () => {
+			const model = handler.getModel()
+			expect(model).toHaveProperty("temperature")
+			expect(model).toHaveProperty("maxTokens")
 		})
 	})
 
-	describe("API Methods", () => {
-		beforeEach(() => {
-			handler = new ZAiHandler({ zaiApiKey: "test-zai-api-key", zaiApiLine: "international" })
-		})
+	describe("createMessage", () => {
+		const systemPrompt = "You are a helpful assistant."
+		const messages: Anthropic.Messages.MessageParam[] = [
+			{
+				role: "user",
+				content: [{ type: "text" as const, text: "Hello!" }],
+			},
+		]
 
-		it("completePrompt method should return text from Z AI API", async () => {
-			const expectedResponse = "This is a test response from Z AI"
-			mockCreate.mockResolvedValueOnce({ choices: [{ message: { content: expectedResponse } }] })
-			const result = await handler.completePrompt("test prompt")
-			expect(result).toBe(expectedResponse)
-		})
+		it("should handle streaming responses", async () => {
+			async function* mockFullStream() {
+				yield { type: "text-delta", text: "Test response from Z.ai" }
+			}
 
-		it("should handle errors in completePrompt", async () => {
-			const errorMessage = "Z AI API error"
-			mockCreate.mockRejectedValueOnce(new Error(errorMessage))
-			await expect(handler.completePrompt("test prompt")).rejects.toThrow(
-				`Z AI completion error: ${errorMessage}`,
-			)
-		})
-
-		it("createMessage should yield text content from stream", async () => {
-			const testContent = "This is test content from Z AI stream"
-
-			mockCreate.mockImplementationOnce(() => {
-				return {
-					[Symbol.asyncIterator]: () => ({
-						next: vitest
-							.fn()
-							.mockResolvedValueOnce({
-								done: false,
-								value: { choices: [{ delta: { content: testContent } }] },
-							})
-							.mockResolvedValueOnce({ done: true }),
-					}),
-				}
+			const mockUsage = Promise.resolve({
+				inputTokens: 10,
+				outputTokens: 5,
 			})
 
-			const stream = handler.createMessage("system prompt", [])
-			const firstChunk = await stream.next()
+			mockStreamText.mockReturnValue({
+				fullStream: mockFullStream(),
+				usage: mockUsage,
+			})
 
-			expect(firstChunk.done).toBe(false)
-			expect(firstChunk.value).toEqual({ type: "text", text: testContent })
+			const stream = handler.createMessage(systemPrompt, messages)
+			const chunks: any[] = []
+			for await (const chunk of stream) {
+				chunks.push(chunk)
+			}
+
+			expect(chunks.length).toBeGreaterThan(0)
+			const textChunks = chunks.filter((chunk) => chunk.type === "text")
+			expect(textChunks).toHaveLength(1)
+			expect(textChunks[0].text).toBe("Test response from Z.ai")
 		})
 
-		it("createMessage should yield usage data from stream", async () => {
-			mockCreate.mockImplementationOnce(() => {
-				return {
-					[Symbol.asyncIterator]: () => ({
-						next: vitest
-							.fn()
-							.mockResolvedValueOnce({
-								done: false,
-								value: {
-									choices: [{ delta: {} }],
-									usage: { prompt_tokens: 10, completion_tokens: 20 },
-								},
-							})
-							.mockResolvedValueOnce({ done: true }),
-					}),
-				}
+		it("should include usage information", async () => {
+			async function* mockFullStream() {
+				yield { type: "text-delta", text: "Test response" }
+			}
+
+			const mockUsage = Promise.resolve({
+				inputTokens: 10,
+				outputTokens: 20,
 			})
 
-			const stream = handler.createMessage("system prompt", [])
-			const firstChunk = await stream.next()
+			mockStreamText.mockReturnValue({
+				fullStream: mockFullStream(),
+				usage: mockUsage,
+			})
 
-			expect(firstChunk.done).toBe(false)
-			expect(firstChunk.value).toEqual({ type: "usage", inputTokens: 10, outputTokens: 20 })
+			const stream = handler.createMessage(systemPrompt, messages)
+			const chunks: any[] = []
+			for await (const chunk of stream) {
+				chunks.push(chunk)
+			}
+
+			const usageChunks = chunks.filter((chunk) => chunk.type === "usage")
+			expect(usageChunks.length).toBeGreaterThan(0)
+			expect(usageChunks[0].inputTokens).toBe(10)
+			expect(usageChunks[0].outputTokens).toBe(20)
 		})
 
-		it("createMessage should pass correct parameters to Z AI client", async () => {
-			const modelId: InternationalZAiModelId = "glm-4.5"
-			const modelInfo = internationalZAiModels[modelId]
-			const handlerWithModel = new ZAiHandler({
-				apiModelId: modelId,
-				zaiApiKey: "test-zai-api-key",
-				zaiApiLine: "international",
+		it("should pass correct parameters to streamText", async () => {
+			async function* mockFullStream() {
+				// empty stream
+			}
+
+			mockStreamText.mockReturnValue({
+				fullStream: mockFullStream(),
+				usage: Promise.resolve({ inputTokens: 0, outputTokens: 0 }),
 			})
 
-			mockCreate.mockImplementationOnce(() => {
-				return {
-					[Symbol.asyncIterator]: () => ({
-						async next() {
-							return { done: true }
-						},
-					}),
-				}
-			})
+			const stream = handler.createMessage(systemPrompt, messages)
+			// Consume the stream
+			for await (const _chunk of stream) {
+				// drain
+			}
 
-			const systemPrompt = "Test system prompt for Z AI"
-			const messages: Anthropic.Messages.MessageParam[] = [{ role: "user", content: "Test message for Z AI" }]
-
-			const messageGenerator = handlerWithModel.createMessage(systemPrompt, messages)
-			await messageGenerator.next()
-
-			expect(mockCreate).toHaveBeenCalledWith(
+			expect(mockStreamText).toHaveBeenCalledWith(
 				expect.objectContaining({
-					model: modelId,
-					max_tokens: modelInfo.maxTokens,
-					temperature: ZAI_DEFAULT_TEMPERATURE,
-					messages: expect.arrayContaining([{ role: "system", content: systemPrompt }]),
-					stream: true,
-					stream_options: { include_usage: true },
+					system: systemPrompt,
+					temperature: expect.any(Number),
 				}),
-				undefined,
 			)
+		})
+	})
+
+	describe("GLM-4.7 Thinking Mode", () => {
+		it("should enable thinking by default for GLM-4.7 (default reasoningEffort is medium)", async () => {
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: "glm-4.7",
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+			})
+
+			async function* mockFullStream() {
+				yield { type: "text-delta", text: "response" }
+			}
+
+			mockStreamText.mockReturnValue({
+				fullStream: mockFullStream(),
+				usage: Promise.resolve({ inputTokens: 0, outputTokens: 0 }),
+			})
+
+			const stream = handlerWithModel.createMessage("system prompt", [])
+			for await (const _chunk of stream) {
+				// drain
+			}
+
+			expect(mockStreamText).toHaveBeenCalledWith(
+				expect.objectContaining({
+					providerOptions: {
+						zhipu: {
+							thinking: { type: "enabled" },
+						},
+					},
+				}),
+			)
+		})
+
+		it("should disable thinking for GLM-4.7 when reasoningEffort is set to disable", async () => {
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: "glm-4.7",
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+				enableReasoningEffort: true,
+				reasoningEffort: "disable",
+			})
+
+			async function* mockFullStream() {
+				yield { type: "text-delta", text: "response" }
+			}
+
+			mockStreamText.mockReturnValue({
+				fullStream: mockFullStream(),
+				usage: Promise.resolve({ inputTokens: 0, outputTokens: 0 }),
+			})
+
+			const stream = handlerWithModel.createMessage("system prompt", [])
+			for await (const _chunk of stream) {
+				// drain
+			}
+
+			expect(mockStreamText).toHaveBeenCalledWith(
+				expect.objectContaining({
+					providerOptions: {
+						zhipu: {
+							thinking: { type: "disabled" },
+						},
+					},
+				}),
+			)
+		})
+
+		it("should enable thinking for GLM-4.7 when reasoningEffort is set to medium", async () => {
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: "glm-4.7",
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+				enableReasoningEffort: true,
+				reasoningEffort: "medium",
+			})
+
+			async function* mockFullStream() {
+				yield { type: "text-delta", text: "response" }
+			}
+
+			mockStreamText.mockReturnValue({
+				fullStream: mockFullStream(),
+				usage: Promise.resolve({ inputTokens: 0, outputTokens: 0 }),
+			})
+
+			const stream = handlerWithModel.createMessage("system prompt", [])
+			for await (const _chunk of stream) {
+				// drain
+			}
+
+			expect(mockStreamText).toHaveBeenCalledWith(
+				expect.objectContaining({
+					providerOptions: {
+						zhipu: {
+							thinking: { type: "enabled" },
+						},
+					},
+				}),
+			)
+		})
+
+		it("should NOT add providerOptions for non-thinking models like GLM-4.6", async () => {
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: "glm-4.6",
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+			})
+
+			async function* mockFullStream() {
+				yield { type: "text-delta", text: "response" }
+			}
+
+			mockStreamText.mockReturnValue({
+				fullStream: mockFullStream(),
+				usage: Promise.resolve({ inputTokens: 0, outputTokens: 0 }),
+			})
+
+			const stream = handlerWithModel.createMessage("system prompt", [])
+			for await (const _chunk of stream) {
+				// drain
+			}
+
+			const callArgs = mockStreamText.mock.calls[0][0]
+			expect(callArgs.providerOptions).toBeUndefined()
+		})
+
+		it("should handle reasoning content in streaming responses", async () => {
+			const handlerWithModel = new ZAiHandler({
+				apiModelId: "glm-4.7",
+				zaiApiKey: "test-zai-api-key",
+				zaiApiLine: "international_coding",
+			})
+
+			async function* mockFullStream() {
+				yield { type: "reasoning", text: "Let me think about this..." }
+				yield { type: "text-delta", text: "Here is my answer" }
+			}
+
+			mockStreamText.mockReturnValue({
+				fullStream: mockFullStream(),
+				usage: Promise.resolve({ inputTokens: 10, outputTokens: 20 }),
+			})
+
+			const stream = handlerWithModel.createMessage("system prompt", [])
+			const chunks: any[] = []
+			for await (const chunk of stream) {
+				chunks.push(chunk)
+			}
+
+			const reasoningChunks = chunks.filter((chunk) => chunk.type === "reasoning")
+			expect(reasoningChunks).toHaveLength(1)
+			expect(reasoningChunks[0].text).toBe("Let me think about this...")
+
+			const textChunks = chunks.filter((chunk) => chunk.type === "text")
+			expect(textChunks).toHaveLength(1)
+			expect(textChunks[0].text).toBe("Here is my answer")
+		})
+	})
+
+	describe("completePrompt", () => {
+		it("should complete a prompt using generateText", async () => {
+			mockGenerateText.mockResolvedValue({
+				text: "Test completion from Z.ai",
+			})
+
+			const result = await handler.completePrompt("Test prompt")
+
+			expect(result).toBe("Test completion from Z.ai")
+			expect(mockGenerateText).toHaveBeenCalledWith(
+				expect.objectContaining({
+					prompt: "Test prompt",
+				}),
+			)
+		})
+	})
+
+	describe("isAiSdkProvider", () => {
+		it("should return true", () => {
+			expect(handler.isAiSdkProvider()).toBe(true)
 		})
 	})
 })

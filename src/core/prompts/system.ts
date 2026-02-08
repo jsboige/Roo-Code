@@ -1,9 +1,7 @@
 import * as vscode from "vscode"
 import * as os from "os"
 
-import type { ModeConfig, PromptComponent, CustomModePrompts, TodoItem } from "@roo-code/types"
-
-import type { SystemPromptSettings } from "./types"
+import { type ModeConfig, type PromptComponent, type CustomModePrompts, type TodoItem } from "@roo-code/types"
 
 import { Mode, modes, defaultModeSlug, getModeBySlug, getGroupName, getModeSelection } from "../../shared/modes"
 import { DiffStrategy } from "../../shared/tools"
@@ -12,21 +10,22 @@ import { isEmpty } from "../../utils/object"
 
 import { McpHub } from "../../services/mcp/McpHub"
 import { CodeIndexManager } from "../../services/code-index/manager"
+import { SkillsManager } from "../../services/skills/SkillsManager"
 
 import { PromptVariables, loadSystemPromptFile } from "./sections/custom-system-prompt"
 
-import { getToolDescriptionsForMode } from "./tools"
+import type { SystemPromptSettings } from "./types"
 import {
 	getRulesSection,
 	getSystemInfoSection,
 	getObjectiveSection,
 	getSharedToolUseSection,
-	getMcpServersSection,
 	getToolUseGuidelinesSection,
 	getCapabilitiesSection,
 	getModesSection,
 	addCustomInstructions,
 	markdownFormattingSection,
+	getSkillsSection,
 } from "./sections"
 
 // Helper function to get prompt component, filtering out empty objects
@@ -53,22 +52,17 @@ async function generatePrompt(
 	promptComponent?: PromptComponent,
 	customModeConfigs?: ModeConfig[],
 	globalCustomInstructions?: string,
-	diffEnabled?: boolean,
 	experiments?: Record<string, boolean>,
-	enableMcpServerCreation?: boolean,
 	language?: string,
 	rooIgnoreInstructions?: string,
-	partialReadsEnabled?: boolean,
 	settings?: SystemPromptSettings,
 	todoList?: TodoItem[],
 	modelId?: string,
+	skillsManager?: SkillsManager,
 ): Promise<string> {
 	if (!context) {
 		throw new Error("Extension context is required for generating system prompt")
 	}
-
-	// If diff is disabled, don't pass the diffStrategy
-	const effectiveDiffStrategy = diffEnabled ? diffStrategy : undefined
 
 	// Get the full mode config to ensure we have the role definition (used for groups, etc.)
 	const modeConfig = getModeBySlug(mode, customModeConfigs) || modes.find((m) => m.slug === mode) || modes[0]
@@ -79,50 +73,36 @@ async function generatePrompt(
 	const hasMcpServers = mcpHub && mcpHub.getServers().length > 0
 	const shouldIncludeMcp = hasMcpGroup && hasMcpServers
 
-	const [modesSection, mcpServersSection] = await Promise.all([
+	const codeIndexManager = CodeIndexManager.getInstance(context, cwd)
+
+	// Tool calling is native-only.
+	const effectiveProtocol = "native"
+
+	const [modesSection, skillsSection] = await Promise.all([
 		getModesSection(context),
-		shouldIncludeMcp
-			? getMcpServersSection(mcpHub, effectiveDiffStrategy, enableMcpServerCreation)
-			: Promise.resolve(""),
+		getSkillsSection(skillsManager, mode as string),
 	])
 
-	const codeIndexManager = CodeIndexManager.getInstance(context, cwd)
+	// Tools catalog is not included in the system prompt.
+	const toolsCatalog = ""
 
 	const basePrompt = `${roleDefinition}
 
 ${markdownFormattingSection()}
 
-${getSharedToolUseSection()}
+${getSharedToolUseSection()}${toolsCatalog}
 
-${getToolDescriptionsForMode(
-	mode,
-	cwd,
-	supportsComputerUse,
-	codeIndexManager,
-	effectiveDiffStrategy,
-	browserViewportSize,
-	shouldIncludeMcp ? mcpHub : undefined,
-	customModeConfigs,
-	experiments,
-	partialReadsEnabled,
-	settings,
-	enableMcpServerCreation,
-	modelId,
-)}
+	${getToolUseGuidelinesSection()}
 
-${getToolUseGuidelinesSection(codeIndexManager)}
-
-${mcpServersSection}
-
-${getCapabilitiesSection(cwd, supportsComputerUse, shouldIncludeMcp ? mcpHub : undefined, effectiveDiffStrategy, codeIndexManager)}
+${getCapabilitiesSection(cwd, shouldIncludeMcp ? mcpHub : undefined)}
 
 ${modesSection}
-
-${getRulesSection(cwd, supportsComputerUse, effectiveDiffStrategy, codeIndexManager)}
+${skillsSection ? `\n${skillsSection}` : ""}
+${getRulesSection(cwd, settings)}
 
 ${getSystemInfoSection(cwd)}
 
-${getObjectiveSection(codeIndexManager, experiments)}
+${getObjectiveSection()}
 
 ${await addCustomInstructions(baseInstructions, globalCustomInstructions || "", cwd, mode, {
 	language: language ?? formatLanguage(vscode.env.language),
@@ -144,15 +124,13 @@ export const SYSTEM_PROMPT = async (
 	customModePrompts?: CustomModePrompts,
 	customModes?: ModeConfig[],
 	globalCustomInstructions?: string,
-	diffEnabled?: boolean,
 	experiments?: Record<string, boolean>,
-	enableMcpServerCreation?: boolean,
 	language?: string,
 	rooIgnoreInstructions?: string,
-	partialReadsEnabled?: boolean,
 	settings?: SystemPromptSettings,
 	todoList?: TodoItem[],
 	modelId?: string,
+	skillsManager?: SkillsManager,
 ): Promise<string> => {
 	if (!context) {
 		throw new Error("Extension context is required for generating system prompt")
@@ -202,28 +180,23 @@ ${fileCustomSystemPrompt}
 ${customInstructions}`
 	}
 
-	// If diff is disabled, don't pass the diffStrategy
-	const effectiveDiffStrategy = diffEnabled ? diffStrategy : undefined
-
 	return generatePrompt(
 		context,
 		cwd,
 		supportsComputerUse,
 		currentMode.slug,
 		mcpHub,
-		effectiveDiffStrategy,
+		diffStrategy,
 		browserViewportSize,
 		promptComponent,
 		customModes,
 		globalCustomInstructions,
-		diffEnabled,
 		experiments,
-		enableMcpServerCreation,
 		language,
 		rooIgnoreInstructions,
-		partialReadsEnabled,
 		settings,
 		todoList,
 		modelId,
+		skillsManager,
 	)
 }
