@@ -3174,6 +3174,9 @@ export const webviewMessageHandler = async (
 				if (message.providerId) {
 					manager.setDefaultProvider(message.providerId)
 
+					// Update global state
+					await updateGlobalState("defaultCondensationProviderId", message.providerId)
+
 					// Send updated list
 					const providers = manager.listProviders()
 					const defaultProviderId = manager.getDefaultProvider()
@@ -3183,6 +3186,9 @@ export const webviewMessageHandler = async (
 						providers,
 						defaultProviderId,
 					})
+
+					// Refresh the entire UI state
+					await provider.postStateToWebview()
 				}
 			} catch (error) {
 				provider.log(
