@@ -40,10 +40,10 @@ describe("MessageEnhancer", () => {
 
 		// Mock single completion handler
 		mockSingleCompletionHandler = vi.fn().mockResolvedValue("Enhanced prompt text")
-		vi.mocked(singleCompletionHandlerModule).singleCompletionHandler = mockSingleCompletionHandler
+		vi.mocked(singleCompletionHandlerModule).singleCompletionHandler = mockSingleCompletionHandler as any
 
 		// Mock TelemetryService
-		vi.mocked(TelemetryService).hasInstance = vi.fn().mockReturnValue(true)
+		vi.mocked(TelemetryService).hasInstance = vi.fn((): boolean => true)
 		// Mock the instance getter
 		Object.defineProperty(TelemetryService, "instance", {
 			get: vi.fn().mockReturnValue({

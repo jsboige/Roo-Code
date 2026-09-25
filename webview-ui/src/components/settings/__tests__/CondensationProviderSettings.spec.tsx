@@ -10,6 +10,11 @@ import { CondensationProviderSettings } from "../CondensationProviderSettings"
 import { vscode } from "@/utils/vscode"
 const mockPostMessage = vscode.postMessage as ReturnType<typeof vi.fn>
 
+// Aliases referenced by the later test blocks but never defined in the
+// branch's WIP state (TS2304 / ReferenceError without them)
+const TestingLib = { render, screen }
+const ReactLib = React
+
 // Helper function to simulate backend response
 const simulateBackendResponse = (
 	providers: any[] = [],
