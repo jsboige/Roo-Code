@@ -31,19 +31,22 @@ interface SmartProviderSettings {
 const PRESET_DESCRIPTIONS = {
 	conservative: {
 		title: "Conservative (Maximum Preservation)",
-		description: "Maximum preservation of conversation context. Keeps all user/assistant messages and preserves tool parameters.",
+		description:
+			"Maximum preservation of conversation context. Keeps all user/assistant messages and preserves tool parameters.",
 		stats: "95-100% context preservation • 20-50% reduction • <5ms",
 		icon: "🎯",
 	},
 	balanced: {
 		title: "Balanced (Recommended)",
-		description: "Balance between preservation and reduction. Summarizes old messages, truncates large tool outputs.",
+		description:
+			"Balance between preservation and reduction. Summarizes old messages, truncates large tool outputs.",
 		stats: "80-95% context preservation • 40-70% reduction • 10-50ms",
 		icon: "⚖️",
 	},
 	aggressive: {
 		title: "Aggressive (Maximum Reduction)",
-		description: "Maximum reduction of non-essential content. Summarizes most content, drops non-essential tool data.",
+		description:
+			"Maximum reduction of non-essential content. Summarizes most content, drops non-essential tool data.",
 		stats: "60-80% context preservation • 60-85% reduction • 20-100ms",
 		icon: "⚡",
 	},
@@ -161,21 +164,21 @@ export const CondensationProviderSettings: React.FC = () => {
 		// Update ref immediately to prevent backend race conditions
 		defaultProviderIdRef.current = providerId
 
-		// Update local state for responsive UI
-		setDefaultProviderId(providerId)
-
+		// Don't update local state optimistically - let backend be the source of truth
+		// This prevents race conditions when clicking rapidly between providers
 		// Send to backend
 		vscode.postMessage({
 			type: "setDefaultCondensationProvider",
 			providerId,
 		})
 
-		console.log("🔍 [CondensationProviderSettings] Ref updated, state synced, backend notified")
+		console.log("🔍 [CondensationProviderSettings] Ref updated, backend notified")
 	}
 
 	const handleSmartPresetChange = (preset: SmartPreset) => {
+		// Don't update local state optimistically - let backend be the source of truth
+		// This prevents race conditions when clicking rapidly between presets
 		const newSettings = { ...smartSettings, preset }
-		setSmartSettings(newSettings)
 		vscode.postMessage({
 			type: "updateSmartProviderSettings",
 			smartProviderSettings: newSettings,
@@ -196,12 +199,11 @@ export const CondensationProviderSettings: React.FC = () => {
 				throw new Error("Configuration must include 'passes' array")
 			}
 
-			// Save
+			// Save - don't update local state optimistically
 			const newSettings = {
 				...smartSettings,
 				customConfig: customConfigText,
 			}
-			setSmartSettings(newSettings)
 			setConfigError(undefined)
 
 			vscode.postMessage({
@@ -221,11 +223,11 @@ export const CondensationProviderSettings: React.FC = () => {
 	}
 
 	const resetToPreset = () => {
+		// Don't update local state optimistically - let backend be the source of truth
 		const newSettings = {
 			preset: smartSettings.preset,
 			customConfig: undefined,
 		}
-		setSmartSettings(newSettings)
 		setCustomConfigText(presetConfigJson)
 		setConfigError(undefined)
 
@@ -454,7 +456,8 @@ export const CondensationProviderSettings: React.FC = () => {
 							older messages to stay within API token limits while preserving conversation grounding.
 						</p>
 						<p className="mb-0">
-							• <strong>Smart Provider</strong> prioritizes qualitative context preservation over quantitative reduction
+							• <strong>Smart Provider</strong> prioritizes qualitative context preservation over
+							quantitative reduction
 							<br />• <strong>Native Provider</strong> uses LLM API calls for high-quality summarization
 							<br />• <strong>Lossless Provider</strong> removes duplicates without losing information
 							<br />• <strong>Truncation Provider</strong> applies simple mechanical truncation

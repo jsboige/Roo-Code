@@ -49,6 +49,7 @@ export const globalSettingsSchema = z.object({
 
 	condensingApiConfigId: z.string().optional(),
 	customCondensingPrompt: z.string().optional(),
+	defaultCondensationProviderId: z.string().optional(),
 	smartProviderSettings: z
 		.object({
 			preset: z.enum(["conservative", "balanced", "aggressive"]),

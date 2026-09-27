@@ -231,6 +231,7 @@ export interface WebviewMessage {
 		| "getDismissedUpsells"
 		| "getCondensationProviders"
 		| "setDefaultCondensationProvider"
+		| "updateCondensationProviderConfig"
 		| "updateSmartProviderSettings"
 		| "showMessage"
 	text?: string
@@ -282,6 +283,8 @@ export interface WebviewMessage {
 	list?: string[] // For dismissedUpsells response
 	organizationId?: string | null // For organization switching
 	providerId?: string // For setDefaultCondensationProvider
+	enabled?: boolean // For updateCondensationProviderConfig
+	priority?: number // For updateCondensationProviderConfig
 	smartProviderSettings?: any // For updateSmartProviderSettings
 	level?: "info" | "warning" | "error" // For showMessage
 	message?: string // For showMessage content
